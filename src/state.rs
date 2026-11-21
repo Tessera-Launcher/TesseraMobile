@@ -47,9 +47,12 @@ impl State {
     /// file is gone is forgotten rather than remembered as a dangling path.
     pub fn reload(&mut self) {
         self.accounts = accounts::list(&self.accounts_dir());
-        self.active = self
-            .stored_active()
-            .and_then(|name| self.file_named(&name));
+        let stored = self.stored_active();
+        self.active = stored.as_deref().and_then(|name| self.file_named(name));
+        if self.active.is_none() && stored.is_some() {
+            // The remembered account is gone: stop pointing at it.
+            let _ = std::fs::remove_file(self.active_path());
+        }
     }
 
     /// Whether this row is the one the launcher would use right now.
@@ -74,6 +77,19 @@ impl State {
         self.active = Some(account.file.clone());
         self.store_active(account.file.as_path());
         true
+    }
+
+    /// Delete the account at `index` and forget it.
+    ///
+    /// A missing index is a stale row, not an error; a file that cannot be
+    /// deleted is reported so the caller can keep the row on screen.
+    pub fn remove(&mut self, index: usize) -> std::io::Result<()> {
+        let account = self.accounts.get(index).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "这个账户已经不在了")
+        })?;
+        accounts::remove(account)?;
+        self.reload();
+        Ok(())
     }
 
     fn file_named(&self, name: &str) -> Option<PathBuf> {
@@ -147,6 +163,27 @@ mod tests {
         state.reload();
         assert!(!state.activate(7));
         assert!(state.active.is_none());
+    }
+
+    #[test]
+    fn remove_deletes_the_file_and_forgets_the_choice() {
+        let (tmp, mut state) = setup();
+        accounts::save_offline(&state.accounts_dir(), "Steve").unwrap();
+        accounts::save_offline(&state.accounts_dir(), "Alex").unwrap();
+        state.reload();
+        assert!(state.activate(1));
+
+        state.remove(1).unwrap();
+        assert_eq!(state.accounts.len(), 1);
+        assert_eq!(state.accounts[0].name(), "Alex");
+        assert!(state.active.is_none());
+        assert!(!tmp.path().join(ACTIVE_FILE).exists());
+    }
+
+    #[test]
+    fn removing_a_missing_index_is_an_error() {
+        let (_tmp, mut state) = setup();
+        assert!(state.remove(0).is_err());
     }
 
     #[test]

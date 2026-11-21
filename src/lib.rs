@@ -63,6 +63,24 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     }
 
+    // The confirmation sheet on the account screen was accepted.
+    {
+        let weak = ui.as_weak();
+        let state = state.clone();
+        let rows = rows.clone();
+        ui.on_account_remove(move |index| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if let Err(error) = state.borrow_mut().remove(index.max(0) as usize) {
+                // The row stays on screen; this is the only report there is
+                // until the launcher has a message surface.
+                eprintln!("移除账户失败：{error}");
+            }
+            refresh(&ui, &state, &rows);
+        });
+    }
+
     // The back arrow on the account screen.
     {
         let weak = ui.as_weak();

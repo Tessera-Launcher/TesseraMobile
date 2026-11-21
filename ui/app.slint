@@ -33,6 +33,7 @@ export component AppWindow inherits Window {
     callback accounts-requested;
     callback accounts-closed;
     callback account-activated(int);
+    callback account-remove(int);
 
     // ---- tabs ----
 
@@ -78,6 +79,9 @@ export component AppWindow inherits Window {
         }
         activated(index) => {
             root.account-activated(index);
+        }
+        remove-confirmed(index) => {
+            root.account-remove(index);
         }
     }
 }

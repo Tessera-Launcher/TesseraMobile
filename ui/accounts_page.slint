@@ -19,6 +19,13 @@ component AccountRowView inherits Rectangle {
     in property <AccountRow> account;
     in property <bool> last;
     callback clicked;
+    /// Deliberate: removing is reachable only through a hold, so a scroll that
+    /// starts on a row can never delete it.
+    callback long-pressed;
+
+    // A hold past the threshold raises `long-pressed` and swallows the click
+    // that would otherwise follow the release.
+    property <bool> long-fired: false;
 
     height: 64px;
     background: touch.pressed ? Theme.pressed : transparent;
@@ -58,6 +65,53 @@ component AccountRowView inherits Rectangle {
     }
 
     touch := TouchArea {
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.down {
+                root.long-fired = false;
+            }
+        }
+        clicked => {
+            if !root.long-fired {
+                root.clicked();
+            }
+        }
+    }
+
+    Timer {
+        interval: 450ms;
+        running: touch.pressed && !root.long-fired;
+        triggered => {
+            root.long-fired = true;
+            root.long-pressed();
+        }
+    }
+}
+
+component SheetButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> danger: false;
+    callback clicked;
+
+    width: 96px;
+    height: 40px;
+    border-radius: 10px;
+    background: root.danger
+        ? (touch.pressed ? #c94751 : Theme.danger)
+        : (touch.pressed ? Theme.pressed : Theme.bar);
+    border-width: root.danger ? 0px : 1px;
+    border-color: Theme.line;
+
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.label;
+        font-size: 14px;
+        color: root.danger ? #ffffff : Theme.text;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
         clicked => {
             root.clicked();
         }
@@ -73,6 +127,14 @@ export component AccountsPage inherits Rectangle {
     callback back();
     /// Tap a row to make it the account the launcher would use.
     callback activated(int);
+    /// The confirmation sheet was accepted.
+    callback remove-confirmed(int);
+
+    // Which row a hold picked, or -1. The sheet lives entirely in the UI: only
+    // the accepted answer reaches Rust.
+    property <int> pending: -1;
+    property <string> pending-name: "";
+    property <bool> pending-offline: false;
 
     background: Theme.bg;
 
@@ -129,6 +191,11 @@ export component AccountsPage inherits Rectangle {
                 clicked => {
                     root.activated(account.index);
                 }
+                long-pressed => {
+                    root.pending = account.index;
+                    root.pending-name = account.name;
+                    root.pending-offline = account.offline;
+                }
             }
         }
 
@@ -152,6 +219,77 @@ export component AccountsPage inherits Rectangle {
                     : "当前：" + root.active-label;
                 font-size: 12px;
                 color: Theme.dim;
+            }
+        }
+    }
+
+    // Confirmation sheet. Two deliberate acts — a hold and this button — stand in
+    // for the desktop build's two presses.
+    if root.pending >= 0 : Rectangle {
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.55);
+
+        TouchArea {
+            clicked => {
+                root.pending = -1;
+            }
+        }
+
+        Rectangle {
+            x: (root.width - self.width) / 2;
+            y: (root.height - self.height) / 2;
+            width: 300px;
+            height: 188px;
+            border-radius: 16px;
+            background: Theme.bar;
+            border-width: 1px;
+            border-color: Theme.line;
+
+            // Swallow taps on the card so the scrim does not close it.
+            TouchArea { }
+
+            Text {
+                x: 20px;
+                y: 20px;
+                text: "移除账户";
+                font-size: 16px;
+                font-weight: 600;
+                color: Theme.text;
+            }
+
+            Text {
+                x: 20px;
+                y: 48px;
+                width: 260px;
+                height: 64px;
+                text: "确定移除 " + root.pending-name + "？\n"
+                    + (root.pending-offline
+                        ? "会删除这个离线账户的文件。"
+                        : "会删除这个会话的凭据文件，需要重新登录才能恢复。");
+                font-size: 13px;
+                color: Theme.dim;
+                wrap: word-wrap;
+            }
+
+            SheetButton {
+                x: 76px;
+                y: 126px;
+                label: "取消";
+                clicked => {
+                    root.pending = -1;
+                }
+            }
+
+            SheetButton {
+                x: 184px;
+                y: 126px;
+                label: "移除";
+                danger: true;
+                clicked => {
+                    root.remove-confirmed(root.pending);
+                    root.pending = -1;
+                }
             }
         }
     }
