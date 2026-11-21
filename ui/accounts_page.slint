@@ -68,7 +68,11 @@ export component AccountsPage inherits Rectangle {
     in property <length> top-inset: 0px;
     in property <length> safe-bottom: 0px;
     in property <[AccountRow]> accounts;
+    /// `Steve · Offline` for the active account, empty when none is chosen.
+    in property <string> active-label;
     callback back();
+    /// Tap a row to make it the account the launcher would use.
+    callback activated(int);
 
     background: Theme.bg;
 
@@ -122,6 +126,9 @@ export component AccountsPage inherits Rectangle {
             for account in root.accounts : AccountRowView {
                 account: account;
                 last: account.index == root.accounts.length - 1;
+                clicked => {
+                    root.activated(account.index);
+                }
             }
         }
 
@@ -140,7 +147,9 @@ export component AccountsPage inherits Rectangle {
             Text {
                 x: Theme.gutter;
                 y: (56px - 18px) / 2;
-                text: "共 " + root.accounts.length + " 个账户";
+                text: root.active-label == ""
+                    ? "共 " + root.accounts.length + " 个账户"
+                    : "当前：" + root.active-label;
                 font-size: 12px;
                 color: Theme.dim;
             }

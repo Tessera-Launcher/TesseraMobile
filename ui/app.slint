@@ -27,9 +27,12 @@ export component AppWindow inherits Window {
     /// Rows for the account screen. Rust rebuilds the whole model every time
     /// the screen opens, so the UI never reads the disk itself.
     in-out property <[AccountRow]> accounts;
+    /// `Steve · Offline` for the active account, empty when none is chosen.
+    in-out property <string> active-label;
 
     callback accounts-requested;
     callback accounts-closed;
+    callback account-activated(int);
 
     // ---- tabs ----
 
@@ -69,8 +72,12 @@ export component AppWindow inherits Window {
         top-inset: root.safe-area-insets.top;
         safe-bottom: root.safe-area-insets.bottom;
         accounts: root.accounts;
+        active-label: root.active-label;
         back => {
             root.accounts-closed();
+        }
+        activated(index) => {
+            root.account-activated(index);
         }
     }
 }

@@ -28,10 +28,10 @@ pub fn run() -> Result<(), slint::PlatformError> {
 pub fn create() -> Result<AppWindow, slint::PlatformError> {
     let ui = AppWindow::new()?;
 
-    let state = Rc::new(RefCell::new(State::default()));
+    let state = Rc::new(RefCell::new(State::new(platform::data_dir())));
     let rows = Rc::new(VecModel::<AccountRow>::from(Vec::new()));
     ui.set_accounts(ModelRc::from(rows.clone()));
-    reload(&state, &rows);
+    reload_for(&ui, &state, &rows);
 
     // The 账户 button on the home page: re-read the directory, then push the
     // screen. Files can change while the screen is closed.
@@ -43,8 +43,23 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let Some(ui) = weak.upgrade() else {
                 return;
             };
-            reload(&state, &rows);
+            reload_for(&ui, &state, &rows);
             ui.set_route(Route::Accounts);
+        });
+    }
+
+    // Tapping a row makes it the account the launcher would use.
+    {
+        let weak = ui.as_weak();
+        let state = state.clone();
+        let rows = rows.clone();
+        ui.on_account_activated(move |index| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if state.borrow_mut().activate(index.max(0) as usize) {
+                refresh(&ui, &state, &rows);
+            }
         });
     }
 
@@ -62,9 +77,14 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
 }
 
 /// Re-read the account directory and push it into the window's model.
-fn reload(state: &Rc<RefCell<State>>, rows: &Rc<VecModel<AccountRow>>) {
-    let mut state = state.borrow_mut();
-    state.reload();
+fn reload_for(ui: &AppWindow, state: &Rc<RefCell<State>>, rows: &Rc<VecModel<AccountRow>>) {
+    state.borrow_mut().reload();
+    refresh(ui, state, rows);
+}
+
+/// Rebuild the row model from the state that is already in memory.
+fn refresh(ui: &AppWindow, state: &Rc<RefCell<State>>, rows: &Rc<VecModel<AccountRow>>) {
+    let state = state.borrow();
     let built: Vec<AccountRow> = state
         .accounts
         .iter()
@@ -78,6 +98,13 @@ fn reload(state: &Rc<RefCell<State>>, rows: &Rc<VecModel<AccountRow>>) {
         })
         .collect();
     rows.set_vec(built);
+    ui.set_active_label(
+        state
+            .active_account()
+            .map(|account| account.label())
+            .unwrap_or_default()
+            .into(),
+    );
 }
 
 /// Android's entry point, called from `NativeActivity.onCreate`.
