@@ -7,6 +7,9 @@
 
 use slint::ComponentHandle;
 
+pub mod accounts;
+pub mod platform;
+
 slint::include_modules!();
 
 /// Show the window and run until it closes.
