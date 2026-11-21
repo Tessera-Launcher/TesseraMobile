@@ -1,7 +1,24 @@
-// 主页: layout lands here once the flow exists.
+// 主页: the version list lands here. For now the header carries the account
+// entry point and the body stays empty.
 
-import { Page } from "page.slint";
+import { Theme } from "theme.slint";
+import { Page, HeaderButton } from "page.slint";
 
 export component HomePage inherits Page {
     title: "主页";
+
+    /// Nothing is wired to this yet; the window forwards it so the front-end can
+    /// open the account sheet without the page knowing what that is.
+    callback accounts-requested;
+
+    HeaderButton {
+        // Right-aligned on the title's baseline: the title sits at
+        // `top-inset + 16px` at 24 px, so a 30 px pill starts 1 px earlier.
+        x: root.width - self.width - Theme.gutter;
+        y: root.top-inset + 15px;
+        label: "账户";
+        clicked => {
+            root.accounts-requested();
+        }
+    }
 }

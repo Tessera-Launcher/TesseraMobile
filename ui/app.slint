@@ -17,6 +17,10 @@ export component AppWindow inherits Window {
 
     in-out property <Tab> tab: Tab.home;
 
+    /// The account entry point, raised by the page that shows the button. The
+    /// Rust side is free to ignore it until the account sheet exists.
+    callback accounts-requested;
+
     VerticalLayout {
         // Page area. `vertical-stretch` keeps the bar pinned to the bottom no
         // matter how tall the window is.
@@ -26,6 +30,9 @@ export component AppWindow inherits Window {
 
             if root.tab == Tab.home : HomePage {
                 top-inset: root.safe-area-insets.top;
+                accounts-requested => {
+                    root.accounts-requested();
+                }
             }
             if root.tab == Tab.download : DownloadPage {
                 top-inset: root.safe-area-insets.top;

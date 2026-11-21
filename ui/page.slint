@@ -3,6 +3,38 @@
 
 import { Theme } from "theme.slint";
 
+/// A small pill for the page header's right edge.
+///
+/// Explicit x/y everywhere: Slint centres children that only declare a size,
+/// and a header action has to sit exactly on the title's baseline.
+export component HeaderButton inherits Rectangle {
+    in property <string> label;
+    callback clicked;
+
+    width: 64px;
+    height: 30px;
+    border-radius: 15px;
+    background: touch.pressed ? Theme.pressed : Theme.bar;
+    border-width: 1px;
+    border-color: Theme.line;
+
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.label;
+        font-size: 13px;
+        color: Theme.text;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 export component Page inherits Rectangle {
     in property <string> title;
     /// `Window.safe-area-insets.top`: the notch, the status bar, or 0.
