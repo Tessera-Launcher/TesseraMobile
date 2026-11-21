@@ -1,0 +1,22 @@
+// Single source of colours and metrics for the phone UI.
+//
+// Every colour here is a literal on purpose: when Tessera's design tokens are
+// wired in, this file becomes the generated `.slint` target and nothing else
+// has to change.
+
+export global Theme {
+    // Surfaces
+    out property <color> bg: #0e0f13;
+    out property <color> bar: #16171d;
+    out property <color> pressed: #1e2028;
+    out property <color> line: #262832;
+
+    // Text
+    out property <color> text: #e9eaf1;
+    out property <color> dim: #7d8190;
+    out property <color> accent: #4f9cf0;
+
+    // Metrics
+    out property <length> nav-height: 56px;
+    out property <length> gutter: 20px;
+}

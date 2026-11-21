@@ -1,0 +1,46 @@
+// The window: one page area over the bottom switcher.
+//
+// Nothing here knows what a screen contains; it only routes the tab state and
+// passes the safe-area insets down, so the bar and the pages both clear the
+// gesture bar at the bottom and the status bar at the top.
+
+import { Theme } from "theme.slint";
+import { BottomBar, Tab } from "navbar.slint";
+import { HomePage } from "home.slint";
+import { DownloadPage } from "download.slint";
+import { SettingsPage } from "settings.slint";
+
+export component AppWindow inherits Window {
+    title: "Tessera";
+    background: Theme.bg;
+    default-font-size: 15px;
+
+    in-out property <Tab> tab: Tab.home;
+
+    VerticalLayout {
+        // Page area. `vertical-stretch` keeps the bar pinned to the bottom no
+        // matter how tall the window is.
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.bg;
+
+            if root.tab == Tab.home : HomePage {
+                top-inset: root.safe-area-insets.top;
+            }
+            if root.tab == Tab.download : DownloadPage {
+                top-inset: root.safe-area-insets.top;
+            }
+            if root.tab == Tab.settings : SettingsPage {
+                top-inset: root.safe-area-insets.top;
+            }
+        }
+
+        BottomBar {
+            tab: root.tab;
+            safe-bottom: root.safe-area-insets.bottom;
+            activated(kind) => {
+                root.tab = kind;
+            }
+        }
+    }
+}

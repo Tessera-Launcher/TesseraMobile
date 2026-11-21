@@ -1,0 +1,23 @@
+// What every screen shares: the app background, the top safe-area inset and a
+// page title. The body is deliberately empty — each screen fills it in later.
+
+import { Theme } from "theme.slint";
+
+export component Page inherits Rectangle {
+    in property <string> title;
+    /// `Window.safe-area-insets.top`: the notch, the status bar, or 0.
+    in property <length> top-inset: 0px;
+
+    width: 100%;
+    height: 100%;
+    background: Theme.bg;
+
+    Text {
+        x: Theme.gutter;
+        y: root.top-inset + 16px;
+        text: root.title;
+        color: Theme.text;
+        font-size: 24px;
+        font-weight: 600;
+    }
+}

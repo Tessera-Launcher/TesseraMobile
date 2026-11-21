@@ -1,0 +1,168 @@
+// The bottom switcher: three tabs, icon over label, one accent at a time.
+//
+// Hand-drawn rather than built from `std-widgets`, because this bar is the one
+// piece of chrome every screen sits on and it has to keep this shape when the
+// design tokens are wired in.
+//
+// Everything is positioned with explicit x/y: Slint centres children that only
+// set a size, which is not what a tab bar wants.
+
+import { Theme } from "theme.slint";
+
+export enum Tab {
+    home,
+    download,
+    settings,
+}
+
+/// The three icons, drawn as one 22×22 stroke path each.
+component NavIcon inherits Rectangle {
+    in property <Tab> kind;
+    in property <color> tint;
+
+    width: 22px;
+    height: 22px;
+    background: transparent;
+
+    Path {
+        stroke: root.tint;
+        stroke-width: 1.7px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: root.kind == Tab.home
+            ? "M3 9.5 L11 3 L19 9.5 L19 19 L3 19 Z M8.25 19 L8.25 13 L13.75 13 L13.75 19"
+            : root.kind == Tab.download
+            ? "M11 3 L11 13.5 M6.5 9 L11 13.5 L15.5 9 M3.5 16.5 L3.5 19 L18.5 19 L18.5 16.5"
+            : "M3 6.5 L19 6.5 M3 11 L19 11 M3 15.5 L19 15.5";
+    }
+
+    // Settings knobs: filled dots read better than gear teeth at 22 px.
+    if root.kind == Tab.settings : Rectangle {
+        x: 6px;
+        y: 4.5px;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.kind == Tab.settings : Rectangle {
+        x: 13px;
+        y: 9px;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.kind == Tab.settings : Rectangle {
+        x: 7px;
+        y: 13.5px;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+}
+
+component NavItem inherits Rectangle {
+    in property <Tab> kind;
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked;
+
+    height: Theme.nav-height;
+    background: touch.pressed ? Theme.pressed : transparent;
+
+    NavIcon {
+        x: (root.width - self.width) / 2;
+        y: 9px;
+        kind: root.kind;
+        tint: root.selected ? Theme.accent : Theme.dim;
+    }
+
+    Text {
+        x: 0;
+        y: 34px;
+        width: root.width;
+        height: 16px;
+        text: root.label;
+        font-size: 11px;
+        color: root.selected ? Theme.accent : Theme.dim;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component BottomBar inherits Rectangle {
+    in property <Tab> tab;
+    /// Height of the gesture bar / home indicator area, from
+    /// `Window.safe-area-insets.bottom`. Zero on desktop.
+    in property <length> safe-bottom: 0px;
+    callback activated(Tab);
+
+    height: Theme.nav-height + safe-bottom;
+    background: Theme.bar;
+
+    // Hairline separator: one pixel, never stretched.
+    Rectangle {
+        y: 0;
+        width: 100%;
+        height: 1px;
+        background: Theme.line;
+    }
+
+    // Equal thirds. Explicit widths keep the split exact on any screen; a
+    // stretch factor on the items was unreliable here.
+    HorizontalLayout {
+        y: 0;
+        width: 100%;
+        height: Theme.nav-height;
+        spacing: 0px;
+        padding: 0px;
+        alignment: start;
+
+        NavItem {
+            width: root.width / 3;
+            kind: Tab.home;
+            label: "主页";
+            selected: root.tab == Tab.home;
+            clicked => {
+                root.activated(Tab.home);
+            }
+        }
+
+        NavItem {
+            width: root.width / 3;
+            kind: Tab.download;
+            label: "下载";
+            selected: root.tab == Tab.download;
+            clicked => {
+                root.activated(Tab.download);
+            }
+        }
+
+        NavItem {
+            width: root.width / 3;
+            kind: Tab.settings;
+            label: "设置";
+            selected: root.tab == Tab.settings;
+            clicked => {
+                root.activated(Tab.settings);
+            }
+        }
+    }
+
+    // Paint the gesture area with the bar instead of letting page content show
+    // through underneath it.
+    Rectangle {
+        y: Theme.nav-height;
+        width: 100%;
+        height: safe-bottom;
+        background: Theme.bar;
+    }
+}
