@@ -77,6 +77,36 @@ pub fn spawn(identity: Identity, accounts_dir: PathBuf) -> Receiver<Event> {
     receiver
 }
 
+/// A client that trusts a bundled root store.
+///
+/// reqwest's `rustls` feature verifies through `rustls-platform-verifier`, and
+/// that crate panics on Android until it has been initialised with a JNI
+/// context ("Expect rustls-platform-verifier to be initialized"). Supplying the
+/// config ourselves keeps the sign-in free of JNI and gives the same trust
+/// decisions on a phone and on a desktop, at the cost of ignoring CAs the user
+/// installed.
+fn http_client() -> Result<reqwest::Client, String> {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let provider = std::sync::Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let config = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|error| format!("TLS 配置失败: {error}"))?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    reqwest::Client::builder()
+        .user_agent(concat!(
+            "tessera-launcher/",
+            env!("CARGO_PKG_VERSION"),
+            " (+https://github.com/Tessera-Launcher/Tessera)"
+        ))
+        .use_preconfigured_tls(config)
+        .build()
+        .map_err(|error| format!("无法创建 HTTP 客户端: {error}"))
+}
+
 async fn run(
     identity: Identity,
     accounts_dir: PathBuf,
@@ -93,14 +123,7 @@ async fn run(
     let application_label = application.label.clone();
     let app_id = application.config.client_id.clone();
 
-    let client = reqwest::Client::builder()
-        .user_agent(concat!(
-            "tessera-launcher/",
-            env!("CARGO_PKG_VERSION"),
-            " (+https://github.com/Tessera-Launcher/Tessera)"
-        ))
-        .build()
-        .map_err(|error| format!("无法创建 HTTP 客户端: {error}"))?;
+    let client = http_client()?;
 
     let code_sender = sender.clone();
     let manager = JavaAuthManager::builder(client)

@@ -34,6 +34,11 @@ impl State {
         state
     }
 
+    /// `<data>/凭据` — credentials live here.
+    pub fn credentials_dir(&self) -> PathBuf {
+        self.root.join("凭据")
+    }
+
     /// `<data>/凭据/账户` — one JSON file per account, same layout as the desktop
     /// build so a credential directory can be copied between them.
     pub fn accounts_dir(&self) -> PathBuf {

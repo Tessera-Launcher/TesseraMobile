@@ -81,6 +81,12 @@ ZTE 7552N / Android 13 / 480×854：
 
 ![账户](docs/phone-accounts.png)
 
+正版登录（设备码，浏览器是系统的）：
+
+| 选择身份 | 等待授权 |
+|---|---|
+| ![身份](docs/phone-login-identities.png) | ![设备码](docs/phone-login-code.png) |
+
 ## 几个刻意的决定
 
 - **不用 WebView。** 全部 Slint 原生绘制。
@@ -106,11 +112,32 @@ ZTE 7552N / Android 13 / 480×854：
 - 一行一个账户文件，按玩家名排序；同一个名字登录两次就是 `Steve` / `Steve (1)`。
 - 点一行 = 切换（桌面版是选中再按「切换」，手机上点就是切换）。
 - 长按 = 移除，走一张确认卡片（对应桌面版的「再点一次」）。
-- 右下「添加」建离线账户，用户名规则和桌面版一致（3–16 个 `[A-Za-z0-9_]`，
-  勾选后可任意）。
+- 右下「添加」二选一：**正版登录**（微软设备码）或**离线账户**（3–16 个
+  `[A-Za-z0-9_]`，勾选后可任意）。
 - 当前账户记在 `<data>/active_account`，存的是文件名不是路径。
 
 账户文件放在 `<data>/凭据/账户/`，格式与桌面版相同，可以直接拷过来。
+
+## 正版登录
+
+`vendor/minecraft-auth` 就是桌面版用的那份代码，这里只是换了个前端：
+
+1. 选身份：官方启动器，或 `凭据/启动器/azure_app_ids.toml` 里的第三方 app id。
+2. 工作线程拿设备码，UI 每 150ms 轮询一次 channel，不阻塞绘制。
+3. 页面显示代码和地址，`复制代码` / `打开浏览器` 交给系统。
+4. 成功后凭据写进同一个账户目录，账户页把它设为当前账户。
+
+两件踩过的 Android 坑，写在这里免得再踩：
+
+- **必须声明 `INTERNET` 权限。** 没有它 `connect` 直接 `EACCES`，reqwest 只会说
+  "error sending request"，看不出是权限问题。
+- **不能用 reqwest 默认的 `rustls` 校验。** 它走 `rustls-platform-verifier`，在
+  Android 上没初始化 JNI 上下文就 panic（"Expect rustls-platform-verifier to be
+  initialized"）。现在用 `use_preconfigured_tls` 配一份内置 Mozilla 根证书，
+  两端行为一致；代价是不认用户自己装的 CA。
+
+`打开浏览器` 和 `复制` 没有用 Slint——它的 Rust API 不暴露这两个能力——而是走
+JNI 调 `Intent` / `ClipboardManager`，见 `src/platform.rs`。
 
 ## 下一步
 

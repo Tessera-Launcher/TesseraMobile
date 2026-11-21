@@ -10,10 +10,12 @@ import { HomePage } from "home.slint";
 import { DownloadPage } from "download.slint";
 import { SettingsPage } from "settings.slint";
 import { AccountsPage, AccountRow } from "accounts_page.slint";
+import { LoginPage, IdentityRow, LoginPhase } from "login_page.slint";
 
 export enum Route {
     tabs,
     accounts,
+    login,
 }
 
 export component AppWindow inherits Window {
@@ -30,7 +32,16 @@ export component AppWindow inherits Window {
     /// `Steve · Offline` for the active account, empty when none is chosen.
     in-out property <string> active-label;
 
+    /// Identities the login screen offers: the official launcher, then every
+    /// entry from `azure_app_ids.toml`.
+    in-out property <[IdentityRow]> identities;
+    in-out property <LoginPhase> login-phase: LoginPhase.choosing;
+    in-out property <string> login-code: "";
+    in-out property <string> login-url: "";
+    in-out property <string> login-error: "";
+
     // Add-account sheet. Rust clears these once the account is written.
+    in-out property <bool> choosing: false;
     in-out property <bool> adding: false;
     in-out property <string> add-name: "";
     in-out property <bool> add-any: false;
@@ -41,6 +52,12 @@ export component AppWindow inherits Window {
     callback account-activated(int);
     callback account-remove(int);
     callback account-add-offline(string, bool);
+    /// The chooser picked the Microsoft flow: load identities, then push login.
+    callback login-requested;
+    callback login-start(int);
+    callback login-cancelled;
+    callback login-open-url;
+    callback login-copy-code;
 
     // ---- tabs ----
 
@@ -76,6 +93,34 @@ export component AppWindow inherits Window {
 
     // ---- accounts ----
 
+
+    // ---- login ----
+
+    if root.route == Route.login : LoginPage {
+        top-inset: root.safe-area-insets.top;
+        safe-bottom: root.safe-area-insets.bottom;
+        identities: root.identities;
+        phase: root.login-phase;
+        code: root.login-code;
+        url: root.login-url;
+        error: root.login-error;
+        back => {
+            root.login-cancelled();
+        }
+        start(index) => {
+            root.login-start(index);
+        }
+        open-url => {
+            root.login-open-url();
+        }
+        copy-code => {
+            root.login-copy-code();
+        }
+        retry => {
+            root.login-requested();
+        }
+    }
+
     if root.route == Route.accounts : AccountsPage {
         top-inset: root.safe-area-insets.top;
         safe-bottom: root.safe-area-insets.bottom;
@@ -97,6 +142,10 @@ export component AppWindow inherits Window {
         keyboard-height: root.virtual-keyboard-size.height;
         add-offline(name, any) => {
             root.account-add-offline(name, any);
+        }
+        choosing <=> root.choosing;
+        login-requested => {
+            root.login-requested();
         }
     }
 }

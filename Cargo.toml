@@ -37,6 +37,12 @@ hex = "0.4"
 tokio = { version = "1", features = ["rt", "time"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 
+# reqwest's `rustls` feature verifies with `rustls-platform-verifier`, which on
+# Android panics until it is handed a JNI context. A bundled Mozilla root store
+# is the alternative: no JNI, and the same trust decisions on every device.
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
+webpki-roots = "1"
+
 [target.'cfg(target_os = "android")'.dependencies]
 # `open_url` and the clipboard: Slint exposes neither, so they go through JNI
 # against the activity `android-activity` already handed the process.
@@ -63,6 +69,11 @@ target_sdk_version = 28
 [package.metadata.android.application]
 label = "Tessera"
 extract_native_libs = true
+
+# Sign-in and every download go over the network; without this the socket
+# connect fails with EACCES and reqwest only says "error sending request".
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
 
 [[package.metadata.android.application.activity]]
 name = "android.app.NativeActivity"
