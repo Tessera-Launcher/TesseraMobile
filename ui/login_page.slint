@@ -82,45 +82,38 @@ export component LoginPage inherits Rectangle {
                 height: 100%;
                 background: transparent;
 
-                ListView {
+                // Rows sit at the top of the body; the hint stays at the
+                // bottom of the page, well clear of the last divider.
+                VerticalLayout {
                     width: 100%;
-                    height: body.height - root.safe-bottom - 105px;
+                    height: 100%;
+                    spacing: 0px;
 
                     for row in root.identities : ChoiceRow {
                         label: row.label;
                         detail: row.detail;
-                        last: row.index == root.identities.length - 1;
+                        last: false;
                         clicked => {
                             root.start(row.index);
                         }
                     }
-                }
 
-                if root.identities.length == 0 : Text {
-                    width: 100%;
-                    y: 40px;
-                    text: "没有可用的登录身份";
-                    font-size: 14px;
-                    color: Theme.dim;
-                    horizontal-alignment: center;
-                }
-
-                // Not an identity of its own: an id typed for one sign-in.
-                ChoiceRow {
-                    y: body.height - root.safe-bottom - 105px;
-                    width: 100%;
-                    label: "自定义 app id";
-                    detail: "用其他启动器的客户端 id 登录";
-                    last: false;
-                    clicked => {
-                        root.custom-error = "";
-                        root.custom-open = true;
+                    // Directly under the identities: it is a way in, not a
+                    // separate section.
+                    ChoiceRow {
+                        label: "自定义 app id";
+                        detail: "用其他启动器的客户端 id 登录";
+                        last: false;
+                        clicked => {
+                            root.custom-error = "";
+                            root.custom-open = true;
+                        }
                     }
                 }
 
                 Text {
                     x: Theme.gutter;
-                    y: body.height - root.safe-bottom - 42px;
+                    y: body.height - root.safe-bottom - 56px;
                     width: root.width - Theme.gutter * 2;
                     text: "登录会跳到系统浏览器，用设备码完成，不会在应用里输入密码。";
                     font-size: 12px;
