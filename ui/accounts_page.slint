@@ -1,0 +1,159 @@
+// The account manager, as a full-screen route rather than a tab.
+//
+// Layout mirrors the desktop screen — saved accounts in one list, the active one
+// marked, sessions and offline identities side by side — but the interactions
+// are the phone's: tap a row to switch, long-press to act on it.
+
+import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
+
+export struct AccountRow {
+    index: int,
+    name: string,
+    application: string,
+    offline: bool,
+    active: bool,
+}
+
+component AccountRowView inherits Rectangle {
+    in property <AccountRow> account;
+    in property <bool> last;
+    callback clicked;
+
+    height: 64px;
+    background: touch.pressed ? Theme.pressed : transparent;
+
+    Rectangle {
+        y: root.height - 1px;
+        width: 100%;
+        height: 1px;
+        background: Theme.line;
+        visible: !root.last;
+    }
+
+    // Active marker: filled while this is the account the launcher would use.
+    Rectangle {
+        x: Theme.gutter;
+        y: (root.height - 8px) / 2;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background: root.account.active ? Theme.accent : Theme.line;
+    }
+
+    Text {
+        x: Theme.gutter + 20px;
+        y: 12px;
+        text: root.account.name;
+        font-size: 16px;
+        color: root.account.active ? Theme.accent : Theme.text;
+    }
+
+    Text {
+        x: Theme.gutter + 20px;
+        y: 34px;
+        text: root.account.application;
+        font-size: 12px;
+        color: Theme.dim;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component AccountsPage inherits Rectangle {
+    in property <length> top-inset: 0px;
+    in property <length> safe-bottom: 0px;
+    in property <[AccountRow]> accounts;
+    callback back();
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        // Header: back arrow and title, on one line.
+        Rectangle {
+            height: root.top-inset + 56px;
+            background: Theme.bg;
+
+            Rectangle {
+                x: 8px;
+                y: root.top-inset + 4px;
+                width: 48px;
+                height: 48px;
+                background: back-touch.pressed ? Theme.pressed : transparent;
+
+                Path {
+                    x: 15px;
+                    y: 16px;
+                    width: 9px;
+                    height: 16px;
+                    stroke: Theme.text;
+                    stroke-width: 2px;
+                    stroke-line-cap: round;
+                    stroke-line-join: round;
+                    commands: "M8 1 L1 8 L8 15";
+                }
+
+                back-touch := TouchArea {
+                    clicked => {
+                        root.back();
+                    }
+                }
+            }
+
+            Text {
+                x: 56px;
+                y: root.top-inset + 16px;
+                text: "账户";
+                font-size: 20px;
+                font-weight: 600;
+                color: Theme.text;
+            }
+        }
+
+        // The list. `ListView` keeps its own scroll position and only builds the
+        // rows near the viewport.
+        ListView {
+            vertical-stretch: 1;
+
+            for account in root.accounts : AccountRowView {
+                account: account;
+                last: account.index == root.accounts.length - 1;
+            }
+        }
+
+        // Footer: where the actions live. The count is the whole story for now.
+        Rectangle {
+            height: 56px + root.safe-bottom;
+            background: Theme.bg;
+
+            Rectangle {
+                y: 0;
+                width: 100%;
+                height: 1px;
+                background: Theme.line;
+            }
+
+            Text {
+                x: Theme.gutter;
+                y: (56px - 18px) / 2;
+                text: "共 " + root.accounts.length + " 个账户";
+                font-size: 12px;
+                color: Theme.dim;
+            }
+        }
+    }
+
+    // Empty state: sits over the list area, which is empty anyway.
+    if root.accounts.length == 0 : Text {
+        y: root.top-inset + 140px;
+        width: 100%;
+        text: "还没有账户";
+        font-size: 15px;
+        color: Theme.dim;
+        horizontal-alignment: center;
+    }
+}

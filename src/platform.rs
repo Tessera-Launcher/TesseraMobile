@@ -17,14 +17,18 @@ pub fn set_data_dir(path: PathBuf) {
 
 /// The launcher's data root.
 ///
-/// Falls back to `./data` so `cargo run` on a desktop behaves like the desktop
-/// build instead of writing into the source tree's parent.
+/// `TESSERA_DATA` overrides it (tests, checkouts); otherwise `./data`, so
+/// `cargo run` on a desktop behaves like the desktop build.
 pub fn data_dir() -> PathBuf {
-    DATA_DIR.get().cloned().unwrap_or_else(|| {
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("data")
-    })
+    if let Some(root) = DATA_DIR.get() {
+        return root.clone();
+    }
+    if let Some(root) = std::env::var_os("TESSERA_DATA") {
+        return PathBuf::from(root);
+    }
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("data")
 }
 
 /// `<data>/凭据/账户` — one JSON file per account, same layout as the desktop

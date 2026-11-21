@@ -1,14 +1,20 @@
-// The window: one page area over the bottom switcher.
+// The window: one route at a time.
 //
-// Nothing here knows what a screen contains; it only routes the tab state and
-// passes the safe-area insets down, so the bar and the pages both clear the
-// gesture bar at the bottom and the status bar at the top.
+// `tabs` is the shell the bottom bar switches between; `accounts` is a pushed
+// screen with its own header and back gesture. Routes own their own layout, so
+// adding one means adding a branch here and nowhere else.
 
 import { Theme } from "theme.slint";
 import { BottomBar, Tab } from "navbar.slint";
 import { HomePage } from "home.slint";
 import { DownloadPage } from "download.slint";
 import { SettingsPage } from "settings.slint";
+import { AccountsPage, AccountRow } from "accounts_page.slint";
+
+export enum Route {
+    tabs,
+    accounts,
+}
 
 export component AppWindow inherits Window {
     title: "Tessera";
@@ -16,12 +22,18 @@ export component AppWindow inherits Window {
     default-font-size: 15px;
 
     in-out property <Tab> tab: Tab.home;
+    in-out property <Route> route: Route.tabs;
 
-    /// The account entry point, raised by the page that shows the button. The
-    /// Rust side is free to ignore it until the account sheet exists.
+    /// Rows for the account screen. Rust rebuilds the whole model every time
+    /// the screen opens, so the UI never reads the disk itself.
+    in-out property <[AccountRow]> accounts;
+
     callback accounts-requested;
+    callback accounts-closed;
 
-    VerticalLayout {
+    // ---- tabs ----
+
+    if root.route == Route.tabs : VerticalLayout {
         // Page area. `vertical-stretch` keeps the bar pinned to the bottom no
         // matter how tall the window is.
         Rectangle {
@@ -48,6 +60,17 @@ export component AppWindow inherits Window {
             activated(kind) => {
                 root.tab = kind;
             }
+        }
+    }
+
+    // ---- accounts ----
+
+    if root.route == Route.accounts : AccountsPage {
+        top-inset: root.safe-area-insets.top;
+        safe-bottom: root.safe-area-insets.bottom;
+        accounts: root.accounts;
+        back => {
+            root.accounts-closed();
         }
     }
 }
