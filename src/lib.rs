@@ -57,7 +57,10 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let Some(ui) = weak.upgrade() else {
                 return;
             };
-            if state.borrow_mut().activate(index.max(0) as usize) {
+            // Bind first: a borrow held across `refresh` would re-enter the
+            // RefCell and panic.
+            let activated = state.borrow_mut().activate(index.max(0) as usize);
+            if activated {
                 refresh(&ui, &state, &rows);
             }
         });
@@ -72,12 +75,43 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let Some(ui) = weak.upgrade() else {
                 return;
             };
-            if let Err(error) = state.borrow_mut().remove(index.max(0) as usize) {
+            let removed = state.borrow_mut().remove(index.max(0) as usize);
+            if let Err(error) = removed {
                 // The row stays on screen; this is the only report there is
                 // until the launcher has a message surface.
                 eprintln!("移除账户失败：{error}");
             }
             refresh(&ui, &state, &rows);
+        });
+    }
+
+    // The add sheet was accepted: validate, write, make it the active account.
+    {
+        let weak = ui.as_weak();
+        let state = state.clone();
+        let rows = rows.clone();
+        ui.on_account_add_offline(move |name, allow_any| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let name = name.trim().to_string();
+            if let Some(problem) = accounts::offline_name_problem(&name, allow_any) {
+                ui.set_add_error(problem.into());
+                return;
+            }
+            let added = state.borrow_mut().add_offline(&name);
+            match added {
+                Ok(_) => {
+                    ui.set_adding(false);
+                    ui.set_add_name("".into());
+                    ui.set_add_any(false);
+                    ui.set_add_error("".into());
+                    refresh(&ui, &state, &rows);
+                }
+                Err(error) => {
+                    ui.set_add_error(format!("无法写入账户文件：{error}").into());
+                }
+            }
         });
     }
 

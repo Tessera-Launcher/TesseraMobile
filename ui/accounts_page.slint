@@ -6,6 +6,7 @@
 
 import { Theme } from "theme.slint";
 import { ListView } from "std-widgets.slint";
+import { HeaderButton } from "page.slint";
 
 export struct AccountRow {
     index: int,
@@ -129,6 +130,16 @@ export component AccountsPage inherits Rectangle {
     callback activated(int);
     /// The confirmation sheet was accepted.
     callback remove-confirmed(int);
+    /// The add sheet was accepted, with the typed name and the "any name" flag.
+    callback add-offline(string, bool);
+
+    // Add sheet. The window owns it because Rust clears it on success.
+    in-out property <bool> adding: false;
+    in-out property <string> add-name: "";
+    in-out property <bool> add-any: false;
+    in-out property <string> add-error: "";
+    /// Height of the soft keyboard, so the sheet can stay above it.
+    in property <length> keyboard-height: 0px;
 
     // Which row a hold picked, or -1. The sheet lives entirely in the UI: only
     // the accepted answer reaches Rust.
@@ -220,6 +231,173 @@ export component AccountsPage inherits Rectangle {
                 font-size: 12px;
                 color: Theme.dim;
             }
+
+            HeaderButton {
+                x: root.width - self.width - Theme.gutter;
+                y: (56px - self.height) / 2;
+                label: "添加";
+                clicked => {
+                    root.add-error = "";
+                    root.adding = true;
+                }
+            }
+        }
+    }
+
+    // Empty state: sits over the list area, which is empty anyway.
+    if root.accounts.length == 0 : Text {
+        y: root.top-inset + 140px;
+        width: 100%;
+        text: "还没有账户";
+        font-size: 15px;
+        color: Theme.dim;
+        horizontal-alignment: center;
+    }
+
+    // Add sheet: a name and the vanilla-rules escape hatch, exactly the two
+    // things the desktop login screen asks for.
+    if root.adding : Rectangle {
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.55);
+
+        TouchArea {
+            clicked => {
+                root.adding = false;
+            }
+        }
+
+        Rectangle {
+            x: (root.width - self.width) / 2;
+            y: max(root.top-inset + 16px, (root.height - root.keyboard-height - self.height) / 2);
+            width: 300px;
+            height: 236px;
+            border-radius: 16px;
+            background: Theme.bar;
+            border-width: 1px;
+            border-color: Theme.line;
+
+            TouchArea { }
+
+            Text {
+                x: 20px;
+                y: 20px;
+                text: "添加离线账户";
+                font-size: 16px;
+                font-weight: 600;
+                color: Theme.text;
+            }
+
+            Rectangle {
+                x: 20px;
+                y: 50px;
+                width: 260px;
+                height: 44px;
+                border-radius: 10px;
+                background: Theme.bg;
+                border-width: 1px;
+                border-color: input.has-focus ? Theme.accent : Theme.line;
+
+                input := TextInput {
+                    x: 12px;
+                    y: 12px;
+                    width: 236px;
+                    height: 20px;
+                    text <=> root.add-name;
+                    font-size: 15px;
+                    color: Theme.text;
+                    single-line: true;
+                    accepted => {
+                        root.add-offline(root.add-name, root.add-any);
+                    }
+
+                    // The sheet is created when it opens, so taking focus here
+                    // is the same as "focus the field the user just asked for".
+                    init => {
+                        self.focus();
+                    }
+                }
+
+                if root.add-name == "" : Text {
+                    x: 12px;
+                    y: 12px;
+                    text: "玩家名";
+                    font-size: 15px;
+                    color: Theme.dim;
+                }
+            }
+
+            Rectangle {
+                x: 20px;
+                y: 104px;
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                background: root.add-any ? Theme.accent : Theme.bg;
+                border-width: 1px;
+                border-color: root.add-any ? Theme.accent : Theme.line;
+
+                Path {
+                    x: 2px;
+                    y: 2px;
+                    width: 14px;
+                    height: 14px;
+                    stroke: #ffffff;
+                    stroke-width: 2px;
+                    stroke-line-cap: round;
+                    stroke-line-join: round;
+                    commands: "M2 7 L6 11 L12 3";
+                    visible: root.add-any;
+                }
+            }
+
+            Text {
+                x: 46px;
+                y: 105px;
+                text: "允许任意用户名";
+                font-size: 13px;
+                color: Theme.text;
+            }
+
+            TouchArea {
+                x: 12px;
+                y: 96px;
+                width: 220px;
+                height: 34px;
+                clicked => {
+                    root.add-any = !root.add-any;
+                }
+            }
+
+            if root.add-error != "" : Text {
+                x: 20px;
+                y: 128px;
+                width: 260px;
+                height: 34px;
+                text: root.add-error;
+                font-size: 12px;
+                color: Theme.danger;
+                wrap: word-wrap;
+            }
+
+            SheetButton {
+                x: 76px;
+                y: 168px;
+                label: "取消";
+                clicked => {
+                    root.adding = false;
+                }
+            }
+
+            SheetButton {
+                x: 184px;
+                y: 168px;
+                label: "创建";
+                danger: false;
+                clicked => {
+                    root.add-offline(root.add-name, root.add-any);
+                }
+            }
         }
     }
 
@@ -294,13 +472,4 @@ export component AccountsPage inherits Rectangle {
         }
     }
 
-    // Empty state: sits over the list area, which is empty anyway.
-    if root.accounts.length == 0 : Text {
-        y: root.top-inset + 140px;
-        width: 100%;
-        text: "还没有账户";
-        font-size: 15px;
-        color: Theme.dim;
-        horizontal-alignment: center;
-    }
 }

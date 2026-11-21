@@ -30,10 +30,17 @@ export component AppWindow inherits Window {
     /// `Steve · Offline` for the active account, empty when none is chosen.
     in-out property <string> active-label;
 
+    // Add-account sheet. Rust clears these once the account is written.
+    in-out property <bool> adding: false;
+    in-out property <string> add-name: "";
+    in-out property <bool> add-any: false;
+    in-out property <string> add-error: "";
+
     callback accounts-requested;
     callback accounts-closed;
     callback account-activated(int);
     callback account-remove(int);
+    callback account-add-offline(string, bool);
 
     // ---- tabs ----
 
@@ -82,6 +89,14 @@ export component AppWindow inherits Window {
         }
         remove-confirmed(index) => {
             root.account-remove(index);
+        }
+        adding <=> root.adding;
+        add-name <=> root.add-name;
+        add-any <=> root.add-any;
+        add-error <=> root.add-error;
+        keyboard-height: root.virtual-keyboard-size.height;
+        add-offline(name, any) => {
+            root.account-add-offline(name, any);
         }
     }
 }

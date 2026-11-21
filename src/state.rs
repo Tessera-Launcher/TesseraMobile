@@ -79,6 +79,24 @@ impl State {
         true
     }
 
+    /// Write a new offline account and make it the active one.
+    ///
+    /// Mirrors the desktop login screen: the list is re-read rather than
+    /// appended to, because the numbering of a repeated name comes from disk.
+    pub fn add_offline(&mut self, name: &str) -> std::io::Result<usize> {
+        let (file, _copy) = accounts::save_offline(&self.accounts_dir(), name)?;
+        self.reload();
+        let index = self
+            .accounts
+            .iter()
+            .position(|account| account.file == file)
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "新账户没有出现在列表里")
+            })?;
+        self.activate(index);
+        Ok(index)
+    }
+
     /// Delete the account at `index` and forget it.
     ///
     /// A missing index is a stale row, not an error; a file that cannot be
@@ -178,6 +196,19 @@ mod tests {
         assert_eq!(state.accounts[0].name(), "Alex");
         assert!(state.active.is_none());
         assert!(!tmp.path().join(ACTIVE_FILE).exists());
+    }
+
+    #[test]
+    fn adding_an_offline_account_makes_it_active() {
+        let (_tmp, mut state) = setup();
+        let index = state.add_offline("Steve").unwrap();
+        assert_eq!(index, 0);
+        assert_eq!(state.accounts.len(), 1);
+        assert_eq!(
+            state.active_account().map(|a| a.name()),
+            Some("Steve".to_string())
+        );
+        assert!(state.accounts[0].offline);
     }
 
     #[test]

@@ -134,6 +134,29 @@ pub fn save_offline(dir: &Path, player_name: &str) -> std::io::Result<(PathBuf, 
     Ok((path, copy))
 }
 
+/// Why this name cannot be an offline identity, or `None` when it can.
+///
+/// Same rules as the desktop build: the vanilla client accepts 3–16 characters
+/// of `[A-Za-z0-9_]`, and a server compares the name as typed. `allow_any` is
+/// the escape hatch for Chinese names and the like, which only single player
+/// and offline servers will accept.
+pub fn offline_name_problem(name: &str, allow_any: bool) -> Option<String> {
+    if name.is_empty() {
+        return Some("请输入用户名".to_string());
+    }
+    if allow_any {
+        return None;
+    }
+    let length = name.chars().count();
+    if !(3..=16).contains(&length) {
+        return Some("原版用户名是 3–16 个字符（勾选后可输入其他名字）".to_string());
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Some("原版用户名只能用字母、数字和下划线（勾选后可输入其他名字）".to_string());
+    }
+    None
+}
+
 /// Delete one account file.
 pub fn remove(account: &Account) -> std::io::Result<()> {
     std::fs::remove_file(&account.file)
@@ -318,6 +341,24 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let (path, _) = save_offline(tmp.path(), "../evil/name").unwrap();
         assert_eq!(path.parent().unwrap(), tmp.path());
+    }
+
+    #[test]
+    fn vanilla_names_are_three_to_sixteen_of_the_allowed_characters() {
+        assert!(offline_name_problem("Steve", false).is_none());
+        assert!(offline_name_problem("a_1", false).is_none());
+        assert!(offline_name_problem("", false).is_some());
+        assert!(offline_name_problem("ab", false).is_some());
+        assert!(offline_name_problem(&"a".repeat(17), false).is_some());
+        assert!(offline_name_problem("史蒂夫", false).is_some());
+        assert!(offline_name_problem("has space", false).is_some());
+    }
+
+    #[test]
+    fn any_name_is_accepted_when_the_box_is_ticked() {
+        assert!(offline_name_problem("史蒂夫", true).is_none());
+        assert!(offline_name_problem("a", true).is_none());
+        assert!(offline_name_problem("", true).is_some());
     }
 
     #[test]
