@@ -5289,8 +5289,10 @@ name = "tessera-mobile"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "jni 0.21.1",
  "md-5",
  "minecraft-auth",
+ "ndk-context",
  "reqwest",
  "serde",
  "serde_json",

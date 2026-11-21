@@ -37,6 +37,12 @@ hex = "0.4"
 tokio = { version = "1", features = ["rt", "time"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 
+[target.'cfg(target_os = "android")'.dependencies]
+# `open_url` and the clipboard: Slint exposes neither, so they go through JNI
+# against the activity `android-activity` already handed the process.
+jni = "0.21"
+ndk-context = "0.1"
+
 [build-dependencies]
 slint-build = "1.19"
 
