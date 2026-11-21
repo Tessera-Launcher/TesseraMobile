@@ -39,6 +39,9 @@ export component AppWindow inherits Window {
     in-out property <string> login-code: "";
     in-out property <string> login-url: "";
     in-out property <string> login-error: "";
+    in-out property <bool> login-custom-open: false;
+    in-out property <string> login-custom-id: "";
+    in-out property <string> login-custom-error: "";
 
     // Add-account sheet. Rust clears these once the account is written.
     in-out property <bool> choosing: false;
@@ -55,6 +58,7 @@ export component AppWindow inherits Window {
     /// The chooser picked the Microsoft flow: load identities, then push login.
     callback login-requested;
     callback login-start(int);
+    callback login-start-custom(string);
     callback login-cancelled;
     callback login-open-url;
     callback login-copy-code;
@@ -104,11 +108,18 @@ export component AppWindow inherits Window {
         code: root.login-code;
         url: root.login-url;
         error: root.login-error;
+        keyboard-height: root.virtual-keyboard-size.height;
+        custom-open <=> root.login-custom-open;
+        custom-id <=> root.login-custom-id;
+        custom-error <=> root.login-custom-error;
         back => {
             root.login-cancelled();
         }
         start(index) => {
             root.login-start(index);
+        }
+        start-custom(app-id) => {
+            root.login-start-custom(app-id);
         }
         open-url => {
             root.login-open-url();

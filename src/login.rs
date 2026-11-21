@@ -26,6 +26,10 @@ pub enum Identity {
     /// One of the ids in `azure_app_ids.toml`, signed in under the name that
     /// file gives it.
     Saved { name: String, app_id: String },
+    /// A client id typed on the spot, for a launcher whose id is not in the
+    /// file. Same chain as [`Identity::Saved`]; only the label differs, because
+    /// there is no name to call it by.
+    Custom { app_id: String },
 }
 
 impl Identity {
@@ -33,6 +37,7 @@ impl Identity {
     pub fn label(&self) -> String {
         match self {
             Identity::Official => "官方启动器".to_string(),
+            Identity::Custom { .. } => "自定义启动器".to_string(),
             Identity::Saved { name, app_id } => {
                 let name = name.trim();
                 if name.is_empty() {
@@ -119,6 +124,9 @@ async fn run(
             // request is made, so a bad file entry fails without a device code.
             AuthApplication::azure_application(name.trim(), app_id.trim())
         }
+        Identity::Custom { app_id } => {
+            AuthApplication::azure_application("自定义启动器", app_id.trim())
+        }
     };
     let application_label = application.label.clone();
     let app_id = application.config.client_id.clone();
@@ -181,6 +189,17 @@ mod tests {
             }
             .label(),
             "HMCL"
+        );
+    }
+
+    #[test]
+    fn a_typed_id_is_its_own_identity() {
+        assert_eq!(
+            Identity::Custom {
+                app_id: "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb".into()
+            }
+            .label(),
+            "自定义启动器"
         );
     }
 

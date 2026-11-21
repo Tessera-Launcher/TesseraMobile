@@ -125,99 +125,38 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let Some(identity) = identities.borrow().get(index.max(0) as usize).cloned() else {
                 return;
             };
-            let accounts_dir = state.borrow().accounts_dir();
-            let receiver = login::spawn(identity, accounts_dir);
-            *pending.borrow_mut() = Some(receiver);
+            begin_login(&ui, &state, &rows, &pending, &login_timer, identity);
+        });
+    }
 
-            ui.set_login_code("".into());
-            ui.set_login_url("".into());
-            ui.set_login_error("".into());
-            ui.set_login_phase(LoginPhase::Waiting);
-
-            let weak = ui.as_weak();
-            let state = state.clone();
-            let rows = rows.clone();
-            let pending = pending.clone();
-            // Weak, so the timer's own callback does not keep the timer alive.
-            let timer = Rc::downgrade(&login_timer);
-            login_timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
-                let Some(ui) = weak.upgrade() else {
-                    return;
-                };
-                let stop = |timer: &std::rc::Weak<Timer>| {
-                    if let Some(timer) = timer.upgrade() {
-                        timer.stop();
-                    }
-                };
-
-                // Three outcomes, not two: an empty channel means "keep
-                // waiting", a closed one means the thread died. Collapsing both
-                // into `Option` reported a failure on the first tick.
-                enum Polled {
-                    Event(Event),
-                    Closed,
-                    Idle,
-                }
-                let polled = {
-                    let receiver = pending.borrow();
-                    match receiver.as_ref() {
-                        Some(receiver) => match receiver.try_recv() {
-                            Ok(event) => Polled::Event(event),
-                            Err(std::sync::mpsc::TryRecvError::Empty) => Polled::Idle,
-                            Err(std::sync::mpsc::TryRecvError::Disconnected) => Polled::Closed,
-                        },
-                        None => Polled::Idle,
-                    }
-                };
-
-                let event = match polled {
-                    Polled::Idle => return,
-                    Polled::Closed => {
-                        *pending.borrow_mut() = None;
-                        stop(&timer);
-                        ui.set_login_error("登录线程意外结束".into());
-                        ui.set_login_phase(LoginPhase::Failed);
-                        return;
-                    }
-                    Polled::Event(event) => event,
-                };
-
-                match event {
-                    // Device code is the only progress the worker reports until
-                    // it is done.
-                    Event::DeviceCode { user_code, url } => {
-                        ui.set_login_code(user_code.into());
-                        ui.set_login_url(url.into());
-                    }
-                    Event::Succeeded { file, .. } => {
-                        *pending.borrow_mut() = None;
-                        stop(&timer);
-                        // Re-read instead of appending: the numbering of a
-                        // repeated name comes from disk. Then make the account
-                        // the worker just wrote the active one.
-                        state.borrow_mut().reload();
-                        let added = state
-                            .borrow()
-                            .accounts
-                            .iter()
-                            .position(|account| account.file == file);
-                        if let Some(index) = added {
-                            state.borrow_mut().activate(index);
-                        }
-                        refresh(&ui, &state, &rows);
-                        ui.set_login_phase(LoginPhase::Choosing);
-                        ui.set_login_code("".into());
-                        ui.set_login_url("".into());
-                        ui.set_route(Route::Accounts);
-                    }
-                    Event::Failed(problem) => {
-                        *pending.borrow_mut() = None;
-                        stop(&timer);
-                        ui.set_login_error(problem.into());
-                        ui.set_login_phase(LoginPhase::Failed);
-                    }
-                }
-            });
+    // A client id was typed instead of picked from the file.
+    {
+        let weak = ui.as_weak();
+        let state = state.clone();
+        let rows = rows.clone();
+        let pending = pending.clone();
+        let login_timer = login_timer.clone();
+        ui.on_login_start_custom(move |app_id| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let app_id = app_id.trim().to_string();
+            if app_id.is_empty() {
+                // The desktop falls back to the row under the cursor here;
+                // on a phone there is no cursor, so say what is missing.
+                ui.set_login_custom_error("请输入 app id，或返回选一个现有身份".into());
+                return;
+            }
+            ui.set_login_custom_error("".into());
+            ui.set_login_custom_open(false);
+            begin_login(
+                &ui,
+                &state,
+                &rows,
+                &pending,
+                &login_timer,
+                Identity::Custom { app_id },
+            );
         });
     }
 
@@ -391,4 +330,111 @@ fn android_main(app: slint::android::AndroidApp) {
     }
     slint::android::init(app).expect("slint android backend must start");
     run().expect("window must run");
+}
+
+/// Start one sign-in and keep draining it until it ends.
+///
+/// Both entry points (a listed identity, a typed client id) land here, so the
+/// timer setup and the teardown on a terminal event live in one place.
+fn begin_login(
+    ui: &AppWindow,
+    state: &Rc<RefCell<State>>,
+    rows: &Rc<VecModel<AccountRow>>,
+    pending: &Rc<RefCell<Option<Receiver<Event>>>>,
+    login_timer: &Rc<Timer>,
+    identity: Identity,
+) {
+    let accounts_dir = state.borrow().accounts_dir();
+    let receiver = login::spawn(identity, accounts_dir);
+    *pending.borrow_mut() = Some(receiver);
+
+    ui.set_login_code("".into());
+    ui.set_login_url("".into());
+    ui.set_login_error("".into());
+    ui.set_login_phase(LoginPhase::Waiting);
+
+    let weak = ui.as_weak();
+    let state = state.clone();
+    let rows = rows.clone();
+    let pending = pending.clone();
+    // Weak, so the timer's own callback does not keep the timer alive.
+    let timer = Rc::downgrade(login_timer);
+    login_timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
+        let Some(ui) = weak.upgrade() else {
+            return;
+        };
+        let stop = |timer: &std::rc::Weak<Timer>| {
+            if let Some(timer) = timer.upgrade() {
+                timer.stop();
+            }
+        };
+
+        // Three outcomes, not two: an empty channel means "keep waiting", a
+        // closed one means the thread died. Collapsing both into `Option`
+        // reported a failure on the first tick.
+        enum Polled {
+            Event(Event),
+            Closed,
+            Idle,
+        }
+        let polled = {
+            let receiver = pending.borrow();
+            match receiver.as_ref() {
+                Some(receiver) => match receiver.try_recv() {
+                    Ok(event) => Polled::Event(event),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => Polled::Idle,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => Polled::Closed,
+                },
+                None => Polled::Idle,
+            }
+        };
+
+        let event = match polled {
+            Polled::Idle => return,
+            Polled::Closed => {
+                *pending.borrow_mut() = None;
+                stop(&timer);
+                ui.set_login_error("登录线程意外结束".into());
+                ui.set_login_phase(LoginPhase::Failed);
+                return;
+            }
+            Polled::Event(event) => event,
+        };
+
+        match event {
+            // Device code is the only progress the worker reports until it is
+            // done.
+            Event::DeviceCode { user_code, url } => {
+                ui.set_login_code(user_code.into());
+                ui.set_login_url(url.into());
+            }
+            Event::Succeeded { file, .. } => {
+                *pending.borrow_mut() = None;
+                stop(&timer);
+                // Re-read instead of appending: the numbering of a repeated
+                // name comes from disk. Then make the account the worker just
+                // wrote the active one.
+                state.borrow_mut().reload();
+                let added = state
+                    .borrow()
+                    .accounts
+                    .iter()
+                    .position(|account| account.file == file);
+                if let Some(index) = added {
+                    state.borrow_mut().activate(index);
+                }
+                refresh(&ui, &state, &rows);
+                ui.set_login_phase(LoginPhase::Choosing);
+                ui.set_login_code("".into());
+                ui.set_login_url("".into());
+                ui.set_route(Route::Accounts);
+            }
+            Event::Failed(problem) => {
+                *pending.borrow_mut() = None;
+                stop(&timer);
+                ui.set_login_error(problem.into());
+                ui.set_login_phase(LoginPhase::Failed);
+            }
+        }
+    });
 }

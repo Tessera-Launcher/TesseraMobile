@@ -29,8 +29,17 @@ export component LoginPage inherits Rectangle {
     in property <string> url: "";
     in property <string> error: "";
 
+    // Custom-app-id sheet. The window owns it because Rust validates and, on
+    // success, closes it and starts the flow.
+    in-out property <bool> custom-open: false;
+    in-out property <string> custom-id: "";
+    in-out property <string> custom-error: "";
+    /// Height of the soft keyboard, so the sheet can stay above it.
+    in property <length> keyboard-height: 0px;
+
     callback back();
     callback start(int);
+    callback start-custom(string);
     callback open-url();
     callback copy-code();
     callback retry();
@@ -75,7 +84,7 @@ export component LoginPage inherits Rectangle {
 
                 ListView {
                     width: 100%;
-                    height: 100%;
+                    height: body.height - root.safe-bottom - 105px;
 
                     for row in root.identities : ChoiceRow {
                         label: row.label;
@@ -96,9 +105,22 @@ export component LoginPage inherits Rectangle {
                     horizontal-alignment: center;
                 }
 
+                // Not an identity of its own: an id typed for one sign-in.
+                ChoiceRow {
+                    y: body.height - root.safe-bottom - 105px;
+                    width: 100%;
+                    label: "自定义 app id";
+                    detail: "用其他启动器的客户端 id 登录";
+                    last: false;
+                    clicked => {
+                        root.custom-error = "";
+                        root.custom-open = true;
+                    }
+                }
+
                 Text {
                     x: Theme.gutter;
-                    y: body.height - root.safe-bottom - 56px;
+                    y: body.height - root.safe-bottom - 42px;
                     width: root.width - Theme.gutter * 2;
                     text: "登录会跳到系统浏览器，用设备码完成，不会在应用里输入密码。";
                     font-size: 12px;
@@ -243,6 +265,119 @@ export component LoginPage inherits Rectangle {
                     clicked => {
                         root.back();
                     }
+                }
+            }
+        }
+    }
+
+    // Custom app id sheet. The hint is the desktop build's: the id is the only
+    // thing a third-party launcher has to share, and the Graph permission it
+    // asks for is only used for skins.
+    if root.custom-open : Rectangle {
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.55);
+
+        TouchArea {
+            clicked => {
+                root.custom-open = false;
+            }
+        }
+
+        Rectangle {
+            x: (root.width - self.width) / 2;
+            y: max(root.top-inset + 16px, (root.height - root.keyboard-height - self.height) / 2);
+            width: 300px;
+            height: 244px;
+            border-radius: 16px;
+            background: Theme.bar;
+            border-width: 1px;
+            border-color: Theme.line;
+
+            TouchArea { }
+
+            Text {
+                x: 20px;
+                y: 20px;
+                text: "自定义 app id";
+                font-size: 16px;
+                font-weight: 600;
+                color: Theme.text;
+            }
+
+            Text {
+                x: 20px;
+                y: 48px;
+                width: 260px;
+                text: "填一个 Azure 应用的 client id（Graph 权限只用于拿皮肤）。";
+                font-size: 12px;
+                color: Theme.dim;
+                wrap: word-wrap;
+            }
+
+            Rectangle {
+                x: 20px;
+                y: 92px;
+                width: 260px;
+                height: 44px;
+                border-radius: 10px;
+                background: Theme.bg;
+                border-width: 1px;
+                border-color: custom-input.has-focus ? Theme.accent : Theme.line;
+
+                custom-input := TextInput {
+                    x: 12px;
+                    y: 12px;
+                    width: 236px;
+                    height: 20px;
+                    text <=> root.custom-id;
+                    font-size: 14px;
+                    color: Theme.text;
+                    single-line: true;
+                    accepted => {
+                        root.start-custom(root.custom-id);
+                    }
+
+                    init => {
+                        self.focus();
+                    }
+                }
+
+                if root.custom-id == "" : Text {
+                    x: 12px;
+                    y: 12px;
+                    text: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+                    font-size: 14px;
+                    color: Theme.dim;
+                }
+            }
+
+            if root.custom-error != "" : Text {
+                x: 20px;
+                y: 142px;
+                width: 260px;
+                height: 30px;
+                text: root.custom-error;
+                font-size: 12px;
+                color: Theme.danger;
+                wrap: word-wrap;
+            }
+
+            SheetButton {
+                x: 76px;
+                y: 184px;
+                label: "取消";
+                clicked => {
+                    root.custom-open = false;
+                }
+            }
+
+            SheetButton {
+                x: 184px;
+                y: 184px;
+                label: "开始登录";
+                clicked => {
+                    root.start-custom(root.custom-id);
                 }
             }
         }
