@@ -12,6 +12,8 @@ use std::rc::Rc;
 use slint::{ComponentHandle, ModelRc, VecModel};
 
 pub mod accounts;
+pub mod app_ids;
+pub mod login;
 pub mod platform;
 pub mod state;
 

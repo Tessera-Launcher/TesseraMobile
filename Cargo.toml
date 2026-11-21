@@ -20,11 +20,22 @@ path = "src/main.rs"
 # `backend-android-activity-06` is inert on desktop, so it stays always-on and
 # both targets share one dependency line.
 slint = { version = "1.19", features = ["backend-android-activity-06"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The launcher ids `data/凭据/启动器/azure_app_ids.toml` is written in.
+toml = "1"
+# Vendored Microsoft → Xbox Live → Minecraft sign-in. The crate keeps its own
+# [workspace]; a path dependency on it is still fine.
+minecraft-auth = { path = "vendor/minecraft-auth" }
 # Offline identities: Java's `UUID.nameUUIDFromBytes` is MD5 over
 # `OfflinePlayer:<name>` (RFC 4122 version 3).
 md5 = { package = "md-5", version = "0.10" }
 hex = "0.4"
+
+# Sign-in runs on its own thread with a current-thread runtime; nothing on the
+# UI thread ever awaits.
+tokio = { version = "1", features = ["rt", "time"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 
 [build-dependencies]
 slint-build = "1.19"

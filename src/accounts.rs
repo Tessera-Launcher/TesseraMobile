@@ -106,6 +106,43 @@ pub fn list(dir: &Path) -> Vec<Account> {
     found
 }
 
+/// Write one signed-in account file, numbered if that player already has one.
+///
+/// Signing in the same player again is never a replacement: the second session
+/// gets `Steve (1).json`, the third `Steve (2).json`, so two identities (or two
+/// accounts that happen to share a name) keep their own refresh tokens. Existing
+/// files are never touched.
+///
+/// `session` is `JavaAuthManager::to_json()` verbatim, so restoring it later is
+/// a matter of handing the same document back to the crate.
+pub fn save(
+    dir: &Path,
+    application: &str,
+    app_id: &str,
+    player_name: &str,
+    player_uuid: &str,
+    session: &serde_json::Value,
+) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    restrict_dir(dir);
+    let (path, copy) = free_slot(dir, &safe_file_stem(player_name));
+
+    let document = serde_json::json!({
+        "format": FORMAT,
+        "application": application,
+        "app_id": app_id,
+        "copy": copy,
+        "player": { "name": player_name, "uuid": player_uuid },
+        "saved_at": unix_now(),
+        "session": session,
+    });
+    let body = serde_json::to_vec_pretty(&document)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+
+    write_private(&path, &body)?;
+    Ok(path)
+}
+
 /// Write an offline account: a name and its offline UUID, no session.
 ///
 /// Numbered like a real session — signing the same name in twice gives
@@ -359,6 +396,47 @@ mod tests {
         assert!(offline_name_problem("史蒂夫", true).is_none());
         assert!(offline_name_problem("a", true).is_none());
         assert!(offline_name_problem("", true).is_some());
+    }
+
+    #[test]
+    fn a_session_is_one_file_per_sign_in() {
+        let tmp = tempfile::tempdir().unwrap();
+        let session = serde_json::json!({ "_save_version": 1 });
+        let first = save(
+            tmp.path(),
+            "官方启动器",
+            "00000000402b5328",
+            "Steve",
+            "00000000-0000-0000-0000-000000000000",
+            &session,
+        )
+        .unwrap();
+        assert_eq!(first.file_name().unwrap(), "Steve.json");
+
+        let second = save(
+            tmp.path(),
+            "官方启动器",
+            "00000000402b5328",
+            "Steve",
+            "00000000-0000-0000-0000-000000000000",
+            &session,
+        )
+        .unwrap();
+        assert_eq!(second.file_name().unwrap(), "Steve (1).json");
+
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&first).unwrap()).unwrap();
+        assert_eq!(doc["format"], FORMAT);
+        assert_eq!(doc["application"], "官方启动器");
+        assert_eq!(doc["app_id"], "00000000402b5328");
+        assert_eq!(doc["session"]["_save_version"], 1);
+        assert!(doc.get("offline").is_none());
+
+        // Both are listed, neither is an offline identity.
+        let listed = list(tmp.path());
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|account| !account.offline));
+        assert_eq!(listed[0].label(), "Steve · 官方启动器");
     }
 
     #[test]
