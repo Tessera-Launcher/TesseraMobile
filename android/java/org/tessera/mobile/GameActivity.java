@@ -19,6 +19,9 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
     private TextureView view;
     private FrameLayout root;
     private boolean started;
+    private float lastTouchX;
+    private float lastTouchY;
+    private boolean touchDown;
 
     static {
         // NativeActivity loaded this too, but binding the library to the class
@@ -47,17 +50,66 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         view = new TextureView(this);
         view.setSurfaceTextureListener(this);
         // The SDLSurface created by SdlBridge is not in the view hierarchy, so
-        // its touch listener never runs. Feed touches from the visible
-        // TextureView into SDL's mouse emulation instead.
+        // its touch listener never runs.  Feed the visible TextureView through
+        // FCL's bridge instead of raw SDL touch events: Minecraft 26.x reads
+        // SDL mouse events, and the bridge also drives the GLFW path.
         view.setOnTouchListener((v, event) -> {
-            int action = event.getActionMasked();
-            if (action == MotionEvent.ACTION_CANCEL) action = MotionEvent.ACTION_UP;
-            TesseraSdl.sendTouch(action, event.getPointerId(0), event.getX(), event.getY(), v.getWidth(), v.getHeight(), event.getPressure());
+            handleTouch(event);
             return true;
         });
         root.addView(view, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
+    }
+
+    /**
+     * Minimal FCL-style touch controller.
+     *
+     * <p>In menu/cursor mode a finger is an absolute virtual mouse: move, then
+     * a tap is one left click.  Once the game grabs the pointer, the same
+     * finger drag becomes a relative look delta.  On-screen movement/action
+     * buttons are the next layer; they will reuse the same bridge.</p>
+     */
+    private void handleTouch(MotionEvent event) {
+        int action = event.getActionMasked();
+        float x = event.getX();
+        float y = event.getY();
+        boolean grabbing = org.lwjgl.glfw.CallbackBridge.isGrabbing();
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+                lastTouchX = x;
+                lastTouchY = y;
+                if (grabbing) {
+                    touchDown = false;
+                } else {
+                    org.lwjgl.glfw.CallbackBridge.sendCursorPos(x, y);
+                    org.lwjgl.glfw.CallbackBridge.sendMouseButton(0, true);
+                    touchDown = true;
+                }
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if (grabbing) {
+                    float dx = x - lastTouchX;
+                    float dy = y - lastTouchY;
+                    if (dx != 0f || dy != 0f) {
+                        org.lwjgl.glfw.CallbackBridge.sendCursorDelta(dx, dy);
+                    }
+                } else {
+                    org.lwjgl.glfw.CallbackBridge.sendCursorPos(x, y);
+                }
+                lastTouchX = x;
+                lastTouchY = y;
+                break;
+            case MotionEvent.ACTION_CANCEL:
+            case MotionEvent.ACTION_UP:
+                if (touchDown) {
+                    org.lwjgl.glfw.CallbackBridge.sendMouseButton(0, false);
+                    touchDown = false;
+                }
+                break;
+            default:
+                break;
+        }
     }
 
     @Override
