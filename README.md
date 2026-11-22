@@ -111,6 +111,15 @@ ZTE 7552N / Android 13 / 480×854：
   留在应用里并立刻创建数据目录、重新读账户。见 `src/platform.rs` 与 `lib.rs`
   里的权限轮询。
 
+## 主页
+
+进入主页时扫描 `/sdcard/Tessera/游戏/versions`：
+
+- 只列含可读版本 JSON 的目录；id、渠道（正式版 / 快照 / 旧版）和 `releaseTime`
+  的日期从 JSON 读，按 `releaseTime` 新到旧排列。
+- 安装完成后会重新扫描并刷新计数；切回主页也会刷新。
+- 目前是只读列表，点行启动还没有接。扫描逻辑在 `src/installed.rs`。
+
 ## 账户
 
 从主页右上角进入，前台是一份 `tessera-core::accounts` 的移植：
@@ -265,7 +274,7 @@ Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 
 ## 下一步
 
-- 启动参数按 FCL 的形态接上（`os.name`、`org.lwjgl.librarypath`、
+- 主页点版本启动；启动参数按 FCL 的形态接上（`os.name`、`org.lwjgl.librarypath`、
   `java.library.path`、JNA 路径），并过滤掉 Mojang 清单里的 `org.lwjgl` 库。
 - 账户页现在只在打开时读盘；等启动流程接上，再按 `tessera-core` 的 `Effect`
   那套把后台任务接起来。

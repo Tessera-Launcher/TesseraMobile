@@ -6,7 +6,7 @@
 
 import { Theme } from "theme.slint";
 import { BottomBar, Tab } from "navbar.slint";
-import { HomePage } from "home.slint";
+import { HomePage, InstalledRow } from "home.slint";
 import { DownloadPage, VersionFilter, VersionRow } from "download.slint";
 import { SettingsPage } from "settings.slint";
 import { AccountsPage, AccountRow } from "accounts_page.slint";
@@ -78,6 +78,11 @@ export component AppWindow inherits Window {
     in-out property <float> runtime-progress: 0;
     in-out property <string> runtime-message: "";
 
+    /// Installed versions under `游戏/versions`, refreshed when the home tab
+    /// opens and after an install finishes.
+    in-out property <[InstalledRow]> installed;
+    in-out property <int> installed-count: 0;
+
     /// Minecraft versions, fetched once all dependencies are in place.
     in-out property <[VersionRow]> versions;
     in-out property <bool> versions-loading: false;
@@ -109,6 +114,7 @@ export component AppWindow inherits Window {
     callback login-open-url;
     callback login-copy-code;
     callback download-opened;
+    callback home-refresh;
     callback aria2-install-requested;
     callback jre-install-requested;
     callback runtime-install-requested;
@@ -122,6 +128,9 @@ export component AppWindow inherits Window {
     // The download page never reads the disk itself: entering the tab is the
     // moment to ask whether the downloader is installed.
     changed tab => {
+        if (root.tab == Tab.home) {
+            root.home-refresh();
+        }
         if (root.tab == Tab.download) {
             root.download-opened();
         }
@@ -138,6 +147,8 @@ export component AppWindow inherits Window {
 
             if root.tab == Tab.home : HomePage {
                 top-inset: root.safe-area-insets.top;
+                installed: root.installed;
+                installed-count: root.installed-count;
                 accounts-requested => {
                     root.accounts-requested();
                 }

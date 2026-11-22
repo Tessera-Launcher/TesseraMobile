@@ -28,6 +28,7 @@ pub mod download;
 pub mod fsutil;
 pub mod http;
 pub mod install;
+pub mod installed;
 pub mod jre;
 pub mod login;
 pub mod platform;
@@ -76,6 +77,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     ui.set_aria2_installed(aria2::installed().is_some());
     ui.set_jre_installed(jre::installed().is_some());
     ui.set_runtime_installed(runtime::installed().is_some());
+    publish_installed(&ui);
     // One install at a time per dependency, independent of what the UI property
     // says.
     let aria2_busy = Arc::new(AtomicBool::new(false));
@@ -89,6 +91,17 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         let initial = versions::Filter::from_key(&config.borrow().download_filter);
         picker.lock().unwrap().set_filter(initial);
         ui.set_version_filter(slint_filter(initial));
+    }
+
+    // The home tab's list is a snapshot; entering the tab or finishing an
+    // install asks for a fresh scan.
+    {
+        let weak = ui.as_weak();
+        ui.on_home_refresh(move || {
+            if let Some(ui) = weak.upgrade() {
+                publish_installed(&ui);
+            }
+        });
     }
 
     // The 账户 button on the home page: re-read the directory, then push the
@@ -788,6 +801,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                                 )
                                 .into(),
                             );
+                            publish_installed(&ui);
                         }
                         install::Event::Failed(problem) => {
                             busy.store(false, Ordering::SeqCst);
@@ -1187,6 +1201,21 @@ fn begin_login(
             }
         }
     });
+}
+
+/// Rebuild the home page's installed-version model from `游戏/versions`.
+fn publish_installed(ui: &AppWindow) {
+    let rows: Vec<InstalledRow> = installed::scan(&install::game_root())
+        .into_iter()
+        .map(|item| InstalledRow {
+            label: item.id.clone().into(),
+            detail: item.detail().into(),
+            key: item.id.into(),
+        })
+        .collect();
+    let count = rows.len() as i32;
+    ui.set_installed(ModelRc::from(Rc::new(VecModel::from(rows))));
+    ui.set_installed_count(count);
 }
 
 /// Keep the install screen's activity tail short enough to fit its box; the

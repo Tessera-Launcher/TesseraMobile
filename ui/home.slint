@@ -1,14 +1,58 @@
-// 主页: the version list lands here. For now the header carries the account
-// entry point and the body stays empty.
+// 主页: what is already installed, plus the account entry point.
+//
+// The list is a snapshot Rust builds from `游戏/versions`; the page never reads
+// the disk itself. A row is read-only until the launch screen exists.
 
 import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
 import { Page, HeaderButton } from "page.slint";
+
+export struct InstalledRow {
+    label: string,
+    detail: string,
+    key: string,
+}
+
+component InstalledRowView inherits Rectangle {
+    in property <InstalledRow> item;
+
+    height: 54px;
+    background: touch.pressed ? Theme.pressed : transparent;
+
+    Text {
+        x: 0px;
+        y: 7px;
+        width: root.width - 16px;
+        text: root.item.label;
+        font-size: 15px;
+        color: Theme.text;
+    }
+
+    Text {
+        x: 0px;
+        y: 29px;
+        width: root.width - 16px;
+        text: root.item.detail;
+        font-size: 11px;
+        color: Theme.dim;
+    }
+
+    Rectangle {
+        y: root.height - Theme.hairline;
+        width: 100%;
+        height: Theme.hairline;
+        background: Theme.line;
+    }
+
+    touch := TouchArea { }
+}
 
 export component HomePage inherits Page {
     title: "主页";
 
-    /// Nothing is wired to this yet; the window forwards it so the front-end can
-    /// open the account sheet without the page knowing what that is.
+    in property <[InstalledRow]> installed;
+    in property <int> installed-count: 0;
+
     callback accounts-requested;
 
     HeaderButton {
@@ -19,6 +63,39 @@ export component HomePage inherits Page {
         label: "账户";
         clicked => {
             root.accounts-requested();
+        }
+    }
+
+    VerticalLayout {
+        x: Theme.gutter;
+        y: root.top-inset + 64px;
+        width: root.width - Theme.gutter * 2;
+        height: root.height - (root.top-inset + 64px) - 8px;
+        spacing: 6px;
+
+        Text {
+            height: 28px;
+            text: "已安装版本 · " + root.installed-count + " 个";
+            font-size: 15px;
+            font-weight: 600;
+            color: Theme.text;
+            vertical-alignment: center;
+        }
+
+        if root.installed-count == 0 : Text {
+            height: 60px;
+            text: "还没有安装版本，去「下载」页选一个。";
+            font-size: 13px;
+            color: Theme.dim;
+            wrap: word-wrap;
+        }
+
+        if root.installed-count > 0 : ListView {
+            vertical-stretch: 1;
+
+            for row in root.installed : InstalledRowView {
+                item: row;
+            }
         }
     }
 }
