@@ -323,10 +323,25 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     {
         let weak = ui.as_weak();
         ui.on_download_opened(move || {
-            if let Some(ui) = weak.upgrade() {
-                ui.set_aria2_installed(aria2::installed().is_some());
-                ui.set_jre_installed(jre::installed().is_some());
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            // A dependency can disappear while the tab is closed (a reset, an
+            // uninstall, a failed re-download). Drop the old "installed" line
+            // and progress in that case, but never interrupt a live install.
+            let aria2_now = aria2::installed().is_some();
+            if ui.get_aria2_installed() && !aria2_now && !ui.get_aria2_busy() {
+                ui.set_aria2_progress(0.0);
+                ui.set_aria2_message("".into());
             }
+            ui.set_aria2_installed(aria2_now);
+
+            let jre_now = jre::installed().is_some();
+            if ui.get_jre_installed() && !jre_now && !ui.get_jre_busy() {
+                ui.set_jre_progress(0.0);
+                ui.set_jre_message("".into());
+            }
+            ui.set_jre_installed(jre_now);
         });
     }
 
