@@ -43,6 +43,16 @@ pub fn client() -> Result<reqwest::Client, String> {
         .map_err(|error| format!("无法创建 HTTP 客户端: {error}"))
 }
 
+/// The host of a URL, without scheme or path.
+pub fn host_of(url: &str) -> String {
+    let without_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
+    without_scheme
+        .split('/')
+        .next()
+        .unwrap_or(without_scheme)
+        .to_string()
+}
+
 /// Keep log lines readable: the host and the file name, not the whole URL.
 pub fn shorten(url: &str) -> String {
     let without_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
@@ -129,6 +139,15 @@ mod tests {
             github_candidates("https://github.com/a/x", "  "),
             vec!["https://github.com/a/x"]
         );
+    }
+
+    #[test]
+    fn the_host_is_what_a_source_label_needs() {
+        assert_eq!(
+            host_of("https://ghfast.top/https://github.com/a/x.zip"),
+            "ghfast.top"
+        );
+        assert_eq!(host_of("https://github.com/a/x.zip"), "github.com");
     }
 
     #[test]

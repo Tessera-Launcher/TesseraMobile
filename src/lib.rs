@@ -382,12 +382,18 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             };
                             ui.set_aria2_message(text.into());
                         }
-                        aria2::Event::Installed { version, .. } => {
+                        aria2::Event::Installed {
+                            version,
+                            source,
+                            ..
+                        } => {
                             busy.store(false, Ordering::SeqCst);
                             ui.set_aria2_busy(false);
                             ui.set_aria2_installed(true);
                             ui.set_aria2_progress(1.0);
-                            ui.set_aria2_message(format!("aria2c {version} 已安装").into());
+                            ui.set_aria2_message(
+                                format!("aria2c {version} 已安装 · {source}").into(),
+                            );
                         }
                         aria2::Event::Failed(problem) => {
                             busy.store(false, Ordering::SeqCst);

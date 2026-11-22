@@ -63,7 +63,13 @@ pub enum Event {
     /// A line for the status card.
     Log(String),
     Progress { done: u64, total: u64, speed: f64 },
-    Installed { version: String, path: PathBuf },
+    Installed {
+        version: String,
+        path: PathBuf,
+        /// Which URL actually served the archive, e.g. `直连 github.com` or
+        /// `代理 ghfast.top → objects.githubusercontent.com`.
+        source: String,
+    },
     Failed(String),
 }
 
@@ -103,15 +109,19 @@ async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
     let urls = http::github_candidates(BUILD.url, proxy);
     let mut last_error = String::new();
     let mut fetched = false;
+    let mut used_url = String::new();
+    let mut final_url = String::new();
     for url in &urls {
         report(Event::Log(format!("aria2c：{}", http::shorten(url))));
         match fetch(&client, url, &archive, BUILD.size, report).await {
-            Ok(()) => {
+            Ok(response_url) => {
                 fetched = true;
+                used_url = url.clone();
+                final_url = response_url;
                 break;
             }
             Err(error) => {
-                last_error = error;
+                last_error = format!("{}：{error}", http::shorten(url));
                 let _ = std::fs::remove_file(&archive);
             }
         }
@@ -153,6 +163,7 @@ async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
     report(Event::Installed {
         version,
         path: binary,
+        source: describe_source(&used_url, &final_url, http::normalize_proxy(proxy).is_some()),
     });
     Ok(())
 }
@@ -164,7 +175,7 @@ async fn fetch(
     dest: &Path,
     expected: u64,
     report: &impl Fn(Event),
-) -> Result<(), String> {
+) -> Result<String, String> {
     let mut response = client
         .get(url)
         .send()
@@ -174,6 +185,9 @@ async fn fetch(
     if !status.is_success() {
         return Err(format!("{} → HTTP {status}", http::shorten(url)));
     }
+    // `response.url()` is the final URL after redirects: a proxy that hands
+    // the transfer off to a CDN is visible here instead of being guessed at.
+    let response_url = response.url().to_string();
     let total = response.content_length().unwrap_or(expected);
     let mut file =
         File::create(dest).map_err(|error| format!("无法写入 {}: {error}", dest.display()))?;
@@ -207,7 +221,27 @@ async fn fetch(
         total: total.max(done),
         speed: done as f64 / elapsed,
     });
-    Ok(())
+    Ok(response_url)
+}
+
+/// Say which URL served the bytes. `used` is the candidate that got a 2xx;
+/// `final_url` is where redirects landed, so a proxy that bounces to a CDN is
+/// not mistaken for the proxy itself. When a proxy was configured but every
+/// candidate failed, the fallback to the direct link is called out instead of
+/// being silent.
+fn describe_source(used: &str, final_url: &str, proxy_configured: bool) -> String {
+    let label = if used == BUILD.url { "直连" } else { "代理" };
+    let used_host = http::host_of(used);
+    let final_host = http::host_of(final_url);
+    let mut source = if used_host == final_host {
+        format!("{label} {used_host}")
+    } else {
+        format!("{label} {used_host} → {final_host}")
+    };
+    if proxy_configured && used == BUILD.url {
+        source.push_str("（代理失败，已回退）");
+    }
+    source
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -302,6 +336,26 @@ mod tests {
         assert!(BUILD.sha256.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(BUILD.size > 0);
         assert!(BUILD.member.ends_with("/aria2c"));
+    }
+
+    #[test]
+    fn the_source_says_proxy_direct_or_fallback() {
+        assert_eq!(
+            describe_source(BUILD.url, BUILD.url, false),
+            "直连 github.com"
+        );
+        assert_eq!(
+            describe_source(
+                "https://ghfast.top/https://github.com/a/x.zip",
+                "https://ghfast.top/https://github.com/a/x.zip",
+                true
+            ),
+            "代理 ghfast.top"
+        );
+        assert_eq!(
+            describe_source(BUILD.url, "https://objects.githubusercontent.com/x", true),
+            "直连 github.com → objects.githubusercontent.com（代理失败，已回退）"
+        );
     }
 
     #[test]

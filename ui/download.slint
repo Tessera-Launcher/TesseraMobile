@@ -102,7 +102,9 @@ export component DownloadPage inherits Page {
         x: Theme.gutter;
         y: root.top-inset + 96px;
         width: root.width - Theme.gutter * 2;
-        text: "aria2c 已安装，版本列表接下来在这里出现。";
+        text: root.aria2-message == ""
+            ? "aria2c 已安装，版本列表接下来在这里出现。"
+            : root.aria2-message;
         font-size: 13px;
         color: Theme.dim;
         wrap: word-wrap;
