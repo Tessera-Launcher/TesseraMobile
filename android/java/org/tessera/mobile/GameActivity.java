@@ -5,6 +5,8 @@ import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.SurfaceTexture;
 import android.os.Bundle;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.ViewGroup;
@@ -44,9 +46,40 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         root.setBackgroundColor(Color.BLACK);
         view = new TextureView(this);
         view.setSurfaceTextureListener(this);
+        // The SDLSurface created by SdlBridge is not in the view hierarchy, so
+        // its touch listener never runs. Feed touches from the visible
+        // TextureView into SDL's mouse emulation instead.
+        view.setOnTouchListener((v, event) -> {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_CANCEL) action = MotionEvent.ACTION_UP;
+            TesseraSdl.sendTouch(action, event.getPointerId(0), event.getX(), event.getY(), v.getWidth(), v.getHeight(), event.getPressure());
+            return true;
+        });
         root.addView(view, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // GameActivity is not an SDLActivity, so SDL never hears about the
+        // window focus change unless the host forwards it.
+        try {
+            org.libsdl.app.SDLActivity.nativeFocusChanged(hasFocus);
+        } catch (Throwable problem) {
+            android.util.Log.e("TesseraTouch", "SDL focus failed", problem);
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            org.libsdl.app.SDLActivity.onNativeKeyDown(event.getKeyCode());
+        } else if (event.getAction() == KeyEvent.ACTION_UP) {
+            org.libsdl.app.SDLActivity.onNativeKeyUp(event.getKeyCode());
+        }
+        return true;
     }
 
     @Override

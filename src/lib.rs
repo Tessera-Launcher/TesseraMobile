@@ -691,7 +691,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_runtime_busy(false);
                             ui.set_runtime_installed(true);
                             ui.set_runtime_progress(1.0);
-                            ui.set_runtime_message("MobileGlues 渲染器已安装".into());
+                            ui.set_runtime_message("Vulkan 运行库已安装".into());
                             load_versions(&ui, &versions_loading, &versions_loaded, &picker, false);
                         }
                         runtime::Event::Failed(problem) => {

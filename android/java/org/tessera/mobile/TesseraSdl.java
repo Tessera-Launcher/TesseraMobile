@@ -36,6 +36,15 @@ public final class TesseraSdl {
         sdlLoaded = true;
     }
 
+    /** Forward one Android touch event to SDL's touch path. */
+    public static void sendTouch(int action, int pointerId, float x, float y,
+                                 int width, int height, float pressure) {
+        if (width <= 0 || height <= 0) return;
+        float nx = Math.max(0f, Math.min(1f, x / (width - 1)));
+        float ny = Math.max(0f, Math.min(1f, y / (height - 1)));
+        org.libsdl.app.SDLActivity.onNativeTouch(1, pointerId, action, nx, ny, pressure);
+    }
+
     public static void prepareSurface(Activity activity, Surface surface, ViewGroup layout) {
         SdlBridge.prepareSurface(activity, surface, layout, activity);
     }

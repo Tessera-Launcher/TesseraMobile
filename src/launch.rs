@@ -7,8 +7,8 @@
 //!
 //! The launch command is the modern (26.x) subset of the desktop builder:
 //! client jar, non-LWJGL libraries, Fabric loader libraries and the FCL LWJGL
-//! jars; no legacy agent, no AOT, no natives extraction. FCL's LWJGL and
-//! MobileGlues runtime replaces Mojang's desktop natives.
+//! jars; no legacy agent, no AOT, no natives extraction. FCL's Android LWJGL
+//! and SDL runtime replaces Mojang's desktop natives; rendering is Vulkan.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -363,14 +363,6 @@ fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Re
             natives.display()
         ),
         format!(
-            "-Dorg.lwjgl.opengl.libname={}",
-            natives.join("libmobileglues.so").display()
-        ),
-        format!(
-            "-Dorg.lwjgl.egl.libname={}",
-            natives.join("libmobileglues.so").display()
-        ),
-        format!(
             "-Dorg.lwjgl.system.SharedLibraryExtractPath={}/lwjgl",
             tmp.display()
         ),
@@ -402,29 +394,13 @@ fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Re
         &features,
         &variables,
     );
-    // High-end Android devices have a Vulkan 1.3+ driver with dynamic
-    // rendering, push descriptors and synchronization2. Force the Vulkan
-    // backend first; RenderPearl still falls back to OpenGL if device
-    // creation fails, so this is safe on older hardware too.
+    // Tessera Mobile is Vulkan-only. The client jar is patched at install
+    // time so RenderPearl never falls back to its OpenGL backend.
     if !game_args.iter().any(|arg| arg == "--graphicsBackend") {
         game_args.push("--graphicsBackend".to_string());
         game_args.push("vulkan".to_string());
     }
 
-    let mg = platform::private_dir().join("mobileglues");
-    std::fs::create_dir_all(&mg).ok();
-    std::env::set_var("POJAV_RENDERER", "opengles3_mobileglues");
-    std::env::set_var("LIBGL_ES", "3");
-    let mg_gl = natives.join("libmobileglues.so");
-    std::env::set_var("LIBGL_EGL", &mg_gl);
-    std::env::set_var("POJAVEXEC_EGL", &mg_gl);
-    // SDL's EGL loader ignores the path argument for the GL library and uses
-    // SDL_OPENGL_LIBRARY instead. Without this it loads the system libGLESv2,
-    // so SDL_GL_GetProcAddress() and LWJGL's MobileGlues provider return
-    // different glGetError addresses (RenderPearl rejects that).
-    std::env::set_var("SDL_OPENGL_LIBRARY", &mg_gl);
-    std::env::set_var("SDL_EGL_LIBRARY", &mg_gl);
-    std::env::set_var("MG_DIR_PATH", &mg);
     std::env::set_var("HOME", platform::private_dir());
     std::env::set_var("TMPDIR", &tmp);
     let ld = format!(
