@@ -102,3 +102,6 @@ Mirror, ModLoader, VersionType, MdtError, ProgressReporter, manifest::*
   custom `Downloader` has been injected. The Android front-end injects
   `HttpDownloader::new(http::client())`; reqwest's default TLS path goes through
   `rustls-platform-verifier`, which panics on Android without a JNI context.
+- MDT itself is plan-only, so it has no JAR-rewrite step. The mobile install
+  ports the desktop `jar::normalize` to `src/jar.rs` and runs it after
+  `DownloadPlan::verify` on every `.jar` in the plan (client, libraries, mods).

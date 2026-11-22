@@ -29,6 +29,7 @@ pub mod fabric_api;
 pub mod fsutil;
 pub mod http;
 pub mod install;
+pub mod jar;
 pub mod installed;
 pub mod jre;
 pub mod login;

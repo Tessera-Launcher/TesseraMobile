@@ -171,6 +171,27 @@ async fn install(version: &str, loader: Loader, report: &impl Fn(Event)) -> Resu
         plan.entries.len()
     )));
 
+    // The raw Mojang/Fabric jars are signed and some are sealed. A transformer
+    // (Fabric/Mixin) cannot rewrite classes in a signed jar, so normalize every
+    // jar the plan put on disk — client, libraries and mods alike.
+    let mut normalized = 0usize;
+    for entry in &plan.entries {
+        if !entry
+            .path
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .ends_with(".jar")
+        {
+            continue;
+        }
+        if crate::jar::normalize(&root.join(&entry.path))? {
+            normalized += 1;
+        }
+    }
+    if normalized > 0 {
+        report(Event::Log(format!("去签名 / 去密封：{normalized} 个 jar")));
+    }
+
     let bytes = plan.total_bytes();
     report(Event::Finished {
         version: plan.id,

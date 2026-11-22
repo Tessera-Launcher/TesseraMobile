@@ -269,6 +269,8 @@ aria2c、JRE、运行库（含 MobileGlues）三项都装好后，下载页从�
 - 安装页只有一个活动日志框：aria2 每完成一个文件就追加一行，只保留最近 12 行，
   持续刷新。没有进度条，也不解析 `[#gid]` 或走 JSON-RPC。
 - aria2 退出后跑 `plan.verify`；失败就停在日志和错误摘要，不自动重试整份清单。
+- 校验通过后对清单里所有 `.jar` 做去签名 / 去密封（`src/jar.rs`，从桌面版
+  `jar::normalize` 移植），客户端、libraries 和 Fabric API 都包括。
 - 成功后结果行给出总用时和平均速度（例如 `26.3 安装完成 · 用时
   4 分 12 秒 · 平均 2.3 MB/s`）。返回按钮在安装结束后才出现。
 - 游戏目录仍是 `/sdcard/Tessera/游戏`，布局和桌面版一致：
@@ -288,7 +290,8 @@ Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 
 ## 下一步
 
-- 主页点版本启动；启动参数按 FCL 的形态接上（`os.name`、`org.lwjgl.librarypath`、
+- 主页点版本启动；启动时也要对 classpath 和 `mods/` 再跑一遍 `jar::normalize`，
+  修复在去签名规则加入前安装的版本。启动参数按 FCL 的形态接上（`os.name`、`org.lwjgl.librarypath`、
   `java.library.path`、JNA 路径）。MDT 已经不再列出 Mojang 的 `org.lwjgl*` 库，
   natives 也不再下载或解压，全部由运行库包提供。
 - 账户页现在只在打开时读盘；等启动流程接上，再按 `tessera-core` 的 `Effect`
