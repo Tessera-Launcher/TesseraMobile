@@ -167,8 +167,8 @@ export component DownloadPage inherits Page {
 
         if !root.runtime-installed : DependencyCard {
             title: "需要运行库";
-            detail: "Android 版 LWJGL 3.4.1、OpenAL、SDL 和 JNA，借用 FCL 的构建。";
-            info: "LWJGL 3.4.1 · arm64 · 约 38 MB";
+            detail: "Android 版 LWJGL 3.4.1、OpenAL、SDL、JNA 和 MobileGlues 渲染器，借用 FCL 的构建。";
+            info: "LWJGL 3.4.1 · MobileGlues · arm64 · 约 46 MB";
             action: "下载运行库";
             busy: root.runtime-busy;
             progress: root.runtime-progress;

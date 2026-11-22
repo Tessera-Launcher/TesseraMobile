@@ -199,19 +199,25 @@ Fold Craft Launcher 的做法：不用 Mojang 的 LWJGL，整套换成 FCL 的 A
 - 从 `https://github.com/FCL-Team/FoldCraftLauncher/raw/<commit>/...` 取：
   - `FCL/libs/lwjgl-3.4.1-natives-release.aar`（解出 `natives/arm64-v8a/*.so`）
   - `FCL/libs/openal-soft-release.aar`、`FCL/libs/SDL-release.aar`（解出 `jni/arm64-v8a/*.so`）
+  - `FCL/libs/MobileGlues-release.aar`（解出 `jni/arm64-v8a/libmobileglues.so`，FCL 内置 2.0.1）
   - `FCL/src/main/assets/app_runtime/lwjgl/3.4.1/*.jar`（13 个 Java 模块）
   - 7 个 JNA 版本的 `libjnidispatch.so`
 - 每个文件都带 SHA-256，由 aria2c 下载、校验、解压到应用私有
   `files/runtime/{lwjgl/3.4.1,native/arm64-v8a,jna/<version>}`，不写 `/sdcard`。
 - URL 用 `github.com/.../raw/...` 而不是 `raw.githubusercontent.com`，这样
   gh-proxy 的 `github.com/...` 前缀规则都能用。
-- 下载约 38 MB，装好约 30 MB。渲染器 AAR（MobileGlues/GL4ES/Zink）暂不下载。
+- 下载约 46 MB，装好约 36 MB。其他渲染器 AAR（GL4ES/Zink）暂不下载。
 
 启动参数还没接，但目标形态是 FCL 那一套：`-Dos.name=Linux`、
 `-Dorg.lwjgl.librarypath=<private>/runtime/lwjgl/3.4.1/natives/arm64-v8a`、
 `-Dorg.lwjgl.openal.libname=<private>/runtime/native/arm64-v8a/libopenal.so`、
 `-Djna.boot.library.path=<private>/runtime/jna/<version>`，以及把
 `java.library.path` 指到这些私有目录和 `/system/lib64`、`/vendor/lib64`。
+
+MobileGlues 按 FCL 的接法：`-Dorg.lwjgl.opengl.libname=libmobileglues.so`、
+`-Dorg.lwjgl.egl.libname=libmobileglues.so`，环境变量
+`POJAV_RENDERER=opengles3_mobileglues`、`LIBGL_ES=3`、`LIBGL_EGL=libmobileglues.so`、
+`POJAVEXEC_EGL=libmobileglues.so`、`MG_DIR_PATH=<private>/mobileglues`。
 
 ## 设置
 

@@ -34,6 +34,8 @@ enum Kind {
     /// AAR whose `jni/arm64-v8a/*` is unpacked to `runtime/native/arm64-v8a`.
     OpenAl,
     Sdl,
+    /// FCL's MobileGlues renderer: `jni/arm64-v8a/libmobileglues.so` plus its license.
+    MobileGlues,
     /// A jar copied to `runtime/lwjgl/3.4.1/`.
     LwjglJar,
     /// `runtime/jna/<version>/libjnidispatch.so`.
@@ -54,6 +56,7 @@ const FILES: &[RuntimeFile] = &[
     RuntimeFile { path: "FCL/libs/lwjgl-3.4.1-natives-release.aar", size: 17119989, sha256: "5a8c40b5b94525385a90b64eaac1df83bc12efcb89ddcfa6bd4b967b85a89ffb", kind: Kind::LwjglNatives },
     RuntimeFile { path: "FCL/libs/openal-soft-release.aar", size: 3620056, sha256: "424947ee10e26b76a3aff6769e6a74fa4fb11b556183997b270f8278e7d3532c", kind: Kind::OpenAl },
     RuntimeFile { path: "FCL/libs/SDL-release.aar", size: 4064412, sha256: "5527d2e59e76b7a58eef0d54bb8ae0ca153593a9dfc0ed73ac84fb829520298b", kind: Kind::Sdl },
+    RuntimeFile { path: "FCL/libs/MobileGlues-release.aar", size: 8280469, sha256: "d92070c32c155822ca9d6be200130cbe74b8b8e725eb7bbc9da1a2d3348434b3", kind: Kind::MobileGlues },
     RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-3.4.1-merged-modules.jar", size: 2094689, sha256: "d2e1a65beb53ecbc4538ec3624a5e129adc46174198b3ccaeb49b3e5ec4fbe18", kind: Kind::LwjglJar },
     RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-freetype.jar", size: 465796, sha256: "e7001800c634f13f15f767493c1debfb92d5422942c5160c524df0fa3de54a46", kind: Kind::LwjglJar },
     RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-lwjglx.jar", size: 237121, sha256: "03838ef76b021ea9e3b50c392659d34e61e851a1d327344e088fb939781cde2c", kind: Kind::LwjglJar },
@@ -97,6 +100,7 @@ pub fn installed() -> Option<PathBuf> {
         format!("{LWJGL_NATIVES}/liblwjgl.so"),
         format!("{NATIVE}/libopenal.so"),
         format!("{NATIVE}/libSDL3.so"),
+        format!("{NATIVE}/libmobileglues.so"),
     ]
     .iter()
     .all(|relative| dir.join(relative).is_file())
@@ -216,6 +220,20 @@ fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
                     &tree.join(NATIVE),
                 )?);
             }
+            Kind::MobileGlues => {
+                let archive = aar_dir.join(&name);
+                verify(&archive, file)?;
+                extracted.push(extract_aar(
+                    &archive,
+                    "jni/arm64-v8a/",
+                    &tree.join(NATIVE),
+                )?);
+                extract_member(
+                    &archive,
+                    "assets/licenses/mobileglues-lgplv2.1-license.txt",
+                    &tree.join("licenses/mobileglues-lgplv2.1-license.txt"),
+                )?;
+            }
             Kind::LwjglJar => {
                 let path = tree.join(LWJGL).join(&name);
                 verify(&path, file)?;
@@ -257,7 +275,7 @@ fn urls_for(proxy: Option<&str>) -> Vec<Vec<String>> {
 
 fn destination_dir(aar_dir: &Path, tree: &Path, kind: Kind) -> PathBuf {
     match kind {
-        Kind::LwjglNatives | Kind::OpenAl | Kind::Sdl => aar_dir.to_path_buf(),
+        Kind::LwjglNatives | Kind::OpenAl | Kind::Sdl | Kind::MobileGlues => aar_dir.to_path_buf(),
         Kind::LwjglJar => tree.join(LWJGL),
         Kind::Jna(version) => tree.join("jna").join(version),
     }
@@ -277,6 +295,7 @@ fn installed_at(tree: &Path) -> Option<()> {
         format!("{LWJGL_NATIVES}/liblwjgl.so"),
         format!("{NATIVE}/libopenal.so"),
         format!("{NATIVE}/libSDL3.so"),
+        format!("{NATIVE}/libmobileglues.so"),
     ]
     .iter()
     .all(|relative| tree.join(relative).is_file())
@@ -328,6 +347,25 @@ fn extract_aar(archive: &Path, prefix: &str, dest: &Path) -> Result<usize, Strin
         count += 1;
     }
     Ok(count)
+}
+
+/// Copy one named member out of an AAR.
+fn extract_member(archive: &Path, member: &str, dest: &Path) -> Result<(), String> {
+    let file = File::open(archive).map_err(|error| format!("无法打开 {}: {error}", archive.display()))?;
+    let mut zip = zip::ZipArchive::new(BufReader::new(file))
+        .map_err(|error| format!("解压 {} 失败：{error}", archive.display()))?;
+    let mut entry = zip
+        .by_name(member)
+        .map_err(|error| format!("包里没有 {member}：{error}"))?;
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("无法创建 {}: {error}", parent.display()))?;
+    }
+    let mut target =
+        File::create(dest).map_err(|error| format!("无法写入 {}: {error}", dest.display()))?;
+    std::io::copy(&mut entry, &mut target)
+        .map_err(|error| format!("解压写入失败: {error}"))?;
+    Ok(())
 }
 
 #[cfg(test)]
