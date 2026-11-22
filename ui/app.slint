@@ -72,6 +72,12 @@ export component AppWindow inherits Window {
     in-out property <float> jre-progress: 0;
     in-out property <string> jre-message: "";
 
+    /// Android runtime pack (FCL LWJGL/OpenAL/SDL/JNA), same shape again.
+    in-out property <bool> runtime-installed: false;
+    in-out property <bool> runtime-busy: false;
+    in-out property <float> runtime-progress: 0;
+    in-out property <string> runtime-message: "";
+
     /// Settings: the one desktop setting the phone front-end owns today.
     in-out property <string> github-proxy: "";
     in-out property <string> settings-status: "";
@@ -92,6 +98,7 @@ export component AppWindow inherits Window {
     callback download-opened;
     callback aria2-install-requested;
     callback jre-install-requested;
+    callback runtime-install-requested;
     callback github-proxy-saved(string);
 
     // The download page never reads the disk itself: entering the tab is the
@@ -127,11 +134,18 @@ export component AppWindow inherits Window {
                 jre-busy: root.jre-busy;
                 jre-progress: root.jre-progress;
                 jre-message: root.jre-message;
+                runtime-installed: root.runtime-installed;
+                runtime-busy: root.runtime-busy;
+                runtime-progress: root.runtime-progress;
+                runtime-message: root.runtime-message;
                 install-requested => {
                     root.aria2-install-requested();
                 }
                 jre-install-requested => {
                     root.jre-install-requested();
+                }
+                runtime-install-requested => {
+                    root.runtime-install-requested();
                 }
             }
             if root.tab == Tab.settings : SettingsPage {

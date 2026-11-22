@@ -14,8 +14,9 @@
 //! leaving a dead binary behind.
 
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use crate::http;
 
@@ -52,6 +53,233 @@ pub fn binary_path() -> PathBuf {
 /// The installed binary, if it is there.
 pub fn installed() -> Option<PathBuf> {
     supported().then(binary_path).filter(|path| path.is_file())
+}
+
+/// One entry in an `aria2c --input-file` list.
+#[derive(Debug, Clone)]
+pub struct ListEntry {
+    /// Every source for this file. aria2 tries them in order and treats a
+    /// tab-separated line as one entity with mirrors.
+    pub urls: Vec<String>,
+    /// Absolute destination directory.
+    pub dir: PathBuf,
+    /// Bare file name inside `dir`.
+    pub out: String,
+    /// Optional `checksum=sha-256=…` line.
+    pub sha256: Option<String>,
+}
+
+/// Write an aria2 input list. Every destination directory is created here:
+/// aria2 fails the whole entry when `dir=` does not exist.
+pub fn write_list(path: &Path, entries: &[ListEntry]) -> Result<(), String> {
+    let mut body = String::new();
+    for entry in entries {
+        if entry.out.contains('/') || entry.out.contains('\\') {
+            return Err(format!("非法的文件名：{}", entry.out));
+        }
+        std::fs::create_dir_all(&entry.dir)
+            .map_err(|error| format!("无法创建 {}: {error}", entry.dir.display()))?;
+        body.push_str(&entry.urls.join("\t"));
+        body.push('\n');
+        body.push_str(&format!("  dir={}\n", entry.dir.display()));
+        body.push_str(&format!("  out={}\n", entry.out));
+        if let Some(sha256) = &entry.sha256 {
+            body.push_str(&format!("  checksum=sha-256={sha256}\n"));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("无法创建 {}: {error}", parent.display()))?;
+    }
+    std::fs::write(path, body)
+        .map_err(|error| format!("无法写入 {}: {error}", path.display()))
+}
+
+/// A PEM bundle of the system CA certificates.
+///
+/// aria2 uses OpenSSL and has no Android trust-store integration; without
+/// `--ca-certificate` every HTTPS download fails with "self signed certificate
+/// in certificate chain". The bundle lives in the app's private directory so
+/// aria2 (same UID) can read it.
+pub fn ca_bundle() -> Result<PathBuf, String> {
+    let path = crate::platform::private_dir().join("ca.pem");
+    if std::fs::metadata(&path).is_ok_and(|meta| meta.len() > 0) {
+        return Ok(path);
+    }
+    let mut data = Vec::new();
+    for dir in [
+        "/system/etc/security/cacerts",
+        "/apex/com.android.conscrypt/cacerts",
+    ] {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(bytes) = std::fs::read(entry.path()) else {
+                continue;
+            };
+            if bytes.starts_with(b"-----BEGIN CERTIFICATE-----") {
+                data.extend_from_slice(&bytes);
+                if !data.ends_with(b"\n") {
+                    data.push(b'\n');
+                }
+            }
+        }
+    }
+    if data.is_empty() {
+        return Err("找不到系统 CA 证书".to_string());
+    }
+    std::fs::write(&path, data)
+        .map_err(|error| format!("无法写入 {}: {error}", path.display()))?;
+    Ok(path)
+}
+
+/// Run one aria2 input list and report the aggregate progress.
+///
+/// stdout and stderr are both drained (stderr on its own thread) so a chatty
+/// failure cannot fill the pipe and stall the child. `--show-console-readout`
+/// with a one-second summary gives a parseable line such as
+/// `[#gid 1.5MiB/2.3MiB(64%) CN:1 DL:526KiB ETA:1s]`.
+pub fn run_input(
+    list: &Path,
+    on_progress: impl Fn(crate::download::Progress),
+    on_log: impl Fn(&str),
+) -> Result<(), String> {
+    let binary = installed().ok_or_else(|| "aria2c 还未安装".to_string())?;
+    let ca = if cfg!(target_os = "android") {
+        Some(ca_bundle()?)
+    } else {
+        None
+    };
+    let mut args = vec![
+        "-i".to_string(),
+        list.display().to_string(),
+        "--no-conf=true".to_string(),
+        "--enable-color=false".to_string(),
+        "--show-console-readout=true".to_string(),
+        "--summary-interval=1".to_string(),
+        "--console-log-level=warn".to_string(),
+        "--file-allocation=none".to_string(),
+        "--auto-file-renaming=false".to_string(),
+        "--allow-overwrite=true".to_string(),
+        "--max-tries=3".to_string(),
+        "--retry-wait=1".to_string(),
+        "--connect-timeout=10".to_string(),
+        "--timeout=30".to_string(),
+        "-j8".to_string(),
+        "-x1".to_string(),
+        "-s1".to_string(),
+        format!("--stop-with-process={}", std::process::id()),
+    ];
+    if let Some(ca) = &ca {
+        args.push(format!("--ca-certificate={}", ca.display()));
+    }
+
+    let mut child = Command::new(binary)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("无法启动 aria2c: {error}"))?;
+
+    let stderr = child.stderr.take();
+    let (sender, receiver) = std::sync::mpsc::channel::<String>();
+    let drain = stderr.map(|stderr| {
+        let sender = sender.clone();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = sender.send(line);
+            }
+        })
+    });
+
+    let mut errors: Vec<String> = Vec::new();
+    let mut last: Option<(u64, u64)> = None;
+    let mut handle = |line: &str| {
+        on_log(line);
+        if let Some(progress) = parse_progress(line) {
+            if progress.total > 0 {
+                let key = (progress.done, progress.total);
+                if last != Some(key) {
+                    last = Some(key);
+                    on_progress(progress);
+                }
+            }
+        }
+        if line.contains("errorCode=") || line.contains("Exception:") {
+            errors.push(line.to_string());
+            if errors.len() > 8 {
+                errors.remove(0);
+            }
+        }
+    };
+
+    if let Some(stdout) = child.stdout.take() {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            handle(&line);
+            while let Ok(line) = receiver.try_recv() {
+                handle(&line);
+            }
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|error| format!("等待 aria2c 失败: {error}"))?;
+    drop(sender);
+    for line in receiver.iter() {
+        handle(&line);
+    }
+    if let Some(drain) = drain {
+        let _ = drain.join();
+    }
+    if status.success() {
+        Ok(())
+    } else {
+        let detail = errors
+            .last()
+            .cloned()
+            .unwrap_or_else(|| format!("退出码 {}", status.code().unwrap_or(-1)));
+        Err(format!("aria2c 下载失败：{detail}"))
+    }
+}
+
+/// Parse `[#gid 1.5MiB/2.3MiB(64%) CN:1 DL:526KiB ETA:1s]`.
+fn parse_progress(line: &str) -> Option<crate::download::Progress> {
+    let start = line.find("[#")?;
+    let rest = &line[start + 2..];
+    let (_, rest) = rest.split_once(' ')?;
+    let (done, rest) = rest.split_once('/')?;
+    let (total, rest) = rest.split_once('(')?;
+    let done = parse_size(done)?;
+    let total = parse_size(total)?;
+    let speed = rest
+        .split_once("DL:")
+        .and_then(|(_, tail)| tail.split_whitespace().next())
+        .and_then(parse_size)
+        .unwrap_or(0);
+    Some(crate::download::Progress {
+        done,
+        total,
+        speed: speed as f64,
+    })
+}
+
+/// `1.5MiB` / `526KiB` / `0B` → bytes.
+fn parse_size(value: &str) -> Option<u64> {
+    let value = value.trim();
+    for (suffix, factor) in [
+        ("TiB", 1024_u64.pow(4)),
+        ("GiB", 1024_u64.pow(3)),
+        ("MiB", 1024_u64.pow(2)),
+        ("KiB", 1024),
+        ("B", 1),
+    ] {
+        if let Some(number) = value.strip_suffix(suffix) {
+            let number: f64 = number.trim().parse().ok()?;
+            return Some((number * factor as f64) as u64);
+        }
+    }
+    None
 }
 
 /// What the install thread reports.

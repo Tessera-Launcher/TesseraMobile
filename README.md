@@ -162,6 +162,13 @@ JNI 调 `Intent` / `ClipboardManager`，见 `src/platform.rs`。
 - 官方 Android 构建是 **API 33+**；更老的设备会通过校验但 `--version` 跑不起来，
   这时会删掉二进制并报错，而不是留下一个坏文件。
 
+**装好 aria2c 之前，JRE 和运行库的卡片是灰的，按钮显示「先安装 aria2c」。** 只有
+aria2c 自己用 reqwest 下载（鸡生蛋）；之后 JRE 的清单、JRE 压缩包、运行库的全部
+AAR/jar 都由 aria2c 拉取。Android 没有 OpenSSL 默认 CA 路径，所以第一次会从
+`/system/etc/security/cacerts`（Android 14+ 还有
+`/apex/com.android.conscrypt/cacerts`）拼出 `files/ca.pem`，再传
+`--ca-certificate`。进度从 aria2 的 `--show-console-readout` 行解析。
+
 GitHub 下载统一走设置页的 GitHub Proxy：读写的还是桌面版那份
 `/sdcard/Tessera/配置.toml` 里的 `github_proxy`，保存时只改这一个键，桌面版写的其他
 字段原样保留。候选顺序和桌面版一致：`proxy/host/...`、`proxy/https://host/...`，
@@ -180,7 +187,36 @@ GitHub 下载统一走设置页的 GitHub Proxy：读写的还是桌面版那份
 安装在 **应用私有目录** `files/jre`（`dlopen` 不能从 `noexec` 的 `/sdcard` 加载）。
 先解到 `files/jre.incoming`，完整后再改名替换，所以中断不会留下一个被当成“已安装”的
 半套 JRE。当前清单是 `safe` 档、arm64-v8a、minSdk 28，解包约 117 MB，下载约 40 MB。
-同样走设置里的 GitHub Proxy，安装完成会显示 `代理 …` 或 `直连 …`。
+清单和压缩包都由 aria2c 下载（见上一节），安装完成会显示用了哪个代理候选。
+
+## Android 运行库（借用 FCL）
+
+Mojang 清单里的 LWJGL natives 是桌面 glibc 构建，Android 上加载不了。这里直接借
+Fold Craft Launcher 的做法：不用 Mojang 的 LWJGL，整套换成 FCL 的 Android 构建。
+
+- 固定在 FCL commit `722e2361f8f3013b6ebc026e52749c1bf3b5be71`
+  （含 LWJGL 3.4.1 的 shaderc natives 修复）。
+- 从 `https://github.com/FCL-Team/FoldCraftLauncher/raw/<commit>/...` 取：
+  - `FCL/libs/lwjgl-3.4.1-natives-release.aar`（解出 `natives/arm64-v8a/*.so`）
+  - `FCL/libs/openal-soft-release.aar`、`FCL/libs/SDL-release.aar`（解出 `jni/arm64-v8a/*.so`）
+  - `FCL/src/main/assets/app_runtime/lwjgl/3.4.1/*.jar`（13 个 Java 模块）
+  - 7 个 JNA 版本的 `libjnidispatch.so`
+- 每个文件都带 SHA-256，由 aria2c 下载、校验、解压到应用私有
+  `files/runtime/{lwjgl/3.4.1,native/arm64-v8a,jna/<version>}`，不写 `/sdcard`。
+- URL 用 `github.com/.../raw/...` 而不是 `raw.githubusercontent.com`，这样
+  gh-proxy 的 `github.com/...` 前缀规则都能用。
+- 下载约 38 MB，装好约 30 MB。渲染器 AAR（MobileGlues/GL4ES/Zink）暂不下载。
+
+启动参数还没接，但目标形态是 FCL 那一套：`-Dos.name=Linux`、
+`-Dorg.lwjgl.librarypath=<private>/runtime/lwjgl/3.4.1/natives/arm64-v8a`、
+`-Dorg.lwjgl.openal.libname=<private>/runtime/native/arm64-v8a/libopenal.so`、
+`-Djna.boot.library.path=<private>/runtime/jna/<version>`，以及把
+`java.library.path` 指到这些私有目录和 `/system/lib64`、`/vendor/lib64`。
+
+## 设置
+
+GitHub Proxy，和桌面版同一个文件、同一个键。页面底部注明 Android 运行库借用自
+Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 
 ## 设置
 
@@ -188,8 +224,9 @@ GitHub 下载统一走设置页的 GitHub Proxy：读写的还是桌面版那份
 
 ## 下一步
 
-- 接版本列表和安装：两项依赖就绪后，把 `mdt-minecraft` 生成的 aria2 列表交给
-  `aria2c`。还要给 aria2 传 `--ca-certificate`（Android 没有 OpenSSL 默认 CA
-  路径），证书来源可以和登录一样用内置 Mozilla 根证书。
+- 接版本列表和安装：把 `mdt-minecraft` 生成的 aria2 列表交给 `aria2c`；计划里过滤
+  `org.lwjgl`，natives 换成上面这套私有运行库。
+- 启动参数按 FCL 的形态接上（`os.name`、`org.lwjgl.librarypath`、
+  `java.library.path`、JNA 路径）。
 - 账户页现在只在打开时读盘；等有了安装流程，再按 `tessera-core` 的 `Effect`
   那套把后台任务接起来。

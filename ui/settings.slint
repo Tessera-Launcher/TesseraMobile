@@ -87,4 +87,16 @@ export component SettingsPage inherits Page {
         color: root.status-error ? Theme.danger : Theme.accent;
         wrap: word-wrap;
     }
+
+    Text {
+        x: Theme.gutter;
+        y: root.top-inset + 340px;
+        width: root.width - Theme.gutter * 2;
+        height: 56px;
+        text: "Android 运行库（LWJGL / OpenAL / SDL / JNA）借用自 Fold Craft Launcher 的 Android 构建。\n"
+            + "LWJGL BSD-3 · SDL zlib · OpenAL LGPL-2.0";
+        font-size: 11px;
+        color: Theme.dim;
+        wrap: word-wrap;
+    }
 }

@@ -29,6 +29,7 @@ pub mod jre;
 pub mod login;
 pub mod settings;
 pub mod platform;
+pub mod runtime;
 pub mod state;
 
 slint::include_modules!();
@@ -69,10 +70,12 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     }
     ui.set_aria2_installed(aria2::installed().is_some());
     ui.set_jre_installed(jre::installed().is_some());
+    ui.set_runtime_installed(runtime::installed().is_some());
     // One install at a time per dependency, independent of what the UI property
     // says.
     let aria2_busy = Arc::new(AtomicBool::new(false));
     let jre_busy = Arc::new(AtomicBool::new(false));
+    let runtime_busy = Arc::new(AtomicBool::new(false));
 
     // The 账户 button on the home page: re-read the directory, then push the
     // screen. Files can change while the screen is closed.
@@ -342,6 +345,13 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                 ui.set_jre_message("".into());
             }
             ui.set_jre_installed(jre_now);
+
+            let runtime_now = runtime::installed().is_some();
+            if ui.get_runtime_installed() && !runtime_now && !ui.get_runtime_busy() {
+                ui.set_runtime_progress(0.0);
+                ui.set_runtime_message("".into());
+            }
+            ui.set_runtime_installed(runtime_now);
         });
     }
 
@@ -447,6 +457,11 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                 ui.set_jre_message("当前平台没有固定构建（需要 Android arm64）".into());
                 return;
             }
+            if aria2::installed().is_none() {
+                busy.store(false, Ordering::SeqCst);
+                ui.set_jre_message("请先安装 aria2c，再下载 JRE".into());
+                return;
+            }
             ui.set_jre_busy(true);
             ui.set_jre_progress(0.0);
             ui.set_jre_message("正在获取 JRE 清单…".into());
@@ -506,6 +521,93 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_jre_busy(false);
                             ui.set_jre_progress(0.0);
                             ui.set_jre_message(problem.into());
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    // Install the Android runtime pack (FCL LWJGL/OpenAL/SDL/JNA). Downloads
+    // go through aria2c, so the same gate as the JRE applies.
+    {
+        let weak = ui.as_weak();
+        let config = config.clone();
+        let busy = runtime_busy.clone();
+        ui.on_runtime_install_requested(move || {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if busy.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            if !runtime::supported() {
+                busy.store(false, Ordering::SeqCst);
+                ui.set_runtime_message("当前平台没有固定构建（需要 Android arm64）".into());
+                return;
+            }
+            if aria2::installed().is_none() {
+                busy.store(false, Ordering::SeqCst);
+                ui.set_runtime_message("请先安装 aria2c，再下载运行库".into());
+                return;
+            }
+            ui.set_runtime_busy(true);
+            ui.set_runtime_progress(0.0);
+            ui.set_runtime_message("正在准备运行库…".into());
+
+            let proxy = config.borrow().github_proxy.clone();
+            let weak = ui.as_weak();
+            let busy = busy.clone();
+            runtime::spawn_install(proxy, move |event| {
+                let weak = weak.clone();
+                let busy = busy.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = weak.upgrade() else {
+                        return;
+                    };
+                    match event {
+                        runtime::Event::Log(line) => {
+                            ui.set_runtime_message(line.into());
+                        }
+                        runtime::Event::Progress { done, total, speed } => {
+                            let fraction = if total == 0 {
+                                0.0
+                            } else {
+                                done as f32 / total as f32
+                            };
+                            ui.set_runtime_progress(fraction);
+                            let text = if speed > 1.0 {
+                                format!(
+                                    "下载运行库… {} / {} · {}/s",
+                                    http::human_size(done),
+                                    http::human_size(total),
+                                    http::human_size(speed as u64)
+                                )
+                            } else {
+                                format!(
+                                    "下载运行库… {} / {}",
+                                    http::human_size(done),
+                                    http::human_size(total)
+                                )
+                            };
+                            ui.set_runtime_message(text.into());
+                        }
+                        runtime::Event::Extracting => {
+                            ui.set_runtime_progress(1.0);
+                            ui.set_runtime_message("校验完成，正在解压运行库…".into());
+                        }
+                        runtime::Event::Installed { .. } => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_runtime_busy(false);
+                            ui.set_runtime_installed(true);
+                            ui.set_runtime_progress(1.0);
+                            ui.set_runtime_message("Android 运行库已安装".into());
+                        }
+                        runtime::Event::Failed(problem) => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_runtime_busy(false);
+                            ui.set_runtime_progress(0.0);
+                            ui.set_runtime_message(problem.into());
                         }
                     }
                 });

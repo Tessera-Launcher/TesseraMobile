@@ -3,8 +3,12 @@
 //! `BuildJRE4Android` publishes a machine-readable manifest at a stable
 //! `releases/latest/download/` URL, so no GitHub API token or JSON API call is
 //! needed: read `jre-manifest.json`, take the zip name and SHA-256 from it, then
-//! fetch `releases/latest/download/<zip name>`. The same GitHub proxy setting
-//! that covers aria2c applies to both requests.
+//! fetch `releases/latest/download/<zip name>`.
+//!
+//! Every byte — manifest and archive — is fetched by the installed aria2c
+//! binary, not by reqwest. The launcher only installs aria2c itself over HTTP;
+//! once that exists, every other dependency goes through the same downloader as
+//! the desktop build.
 //!
 //! The package is rootless (`lib/`, `conf/`, `legal/`, `release`) and is meant
 //! to be unpacked into the app's private `files/jre`: the JVM is loaded with
@@ -18,7 +22,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::{download, fsutil, http};
+use crate::aria2::{self, ListEntry};
+use crate::{fsutil, http};
 
 /// Stable URL that redirects to the newest release's manifest.
 pub const MANIFEST_URL: &str =
@@ -76,7 +81,7 @@ pub enum Event {
     Installed {
         id: String,
         path: PathBuf,
-        /// Which URL served the zip, e.g. `代理 ghfast.top` or `直连 github.com`.
+        /// Which candidate aria2c downloaded from.
         source: String,
     },
     Failed(String),
@@ -91,18 +96,16 @@ pub fn spawn_install(proxy: String, report: impl Fn(Event) + Send + 'static) {
         return;
     }
     std::thread::spawn(move || {
-        let outcome = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|error| format!("无法创建异步运行时: {error}"))
-            .and_then(|runtime| runtime.block_on(install(&proxy, &report)));
-        if let Err(problem) = outcome {
+        if let Err(problem) = install(&proxy, &report) {
             report(Event::Failed(problem));
         }
     });
 }
 
-async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
+fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
+    if aria2::installed().is_none() {
+        return Err("请先安装 aria2c，再下载 JRE".to_string());
+    }
     let install = install_dir();
     let parent = install
         .parent()
@@ -114,11 +117,7 @@ async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work).map_err(|error| format!("无法创建临时目录: {error}"))?;
 
-    let client = http::client()?;
-    let proxy_configured = http::normalize_proxy(proxy).is_some();
-
-    let (manifest, _manifest_url, _manifest_final) =
-        fetch_manifest(&client, proxy, report).await?;
+    let (manifest, _manifest_url) = fetch_manifest(&work, proxy, report)?;
     if manifest.abi != "arm64-v8a" {
         let _ = std::fs::remove_dir_all(&work);
         return Err(format!(
@@ -146,50 +145,10 @@ async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
         .next()
         .unwrap_or(&manifest.files.zip.name);
     let zip_url = format!("{ASSET_BASE}/{zip_name}");
-    let archive = work.join("jre.zip");
-    let urls = http::github_candidates(&zip_url, proxy);
-    let mut last_error = String::new();
-    let mut fetched = false;
-    let mut used_url = String::new();
-    let mut final_url = String::new();
-    for url in &urls {
-        report(Event::Log(format!("JRE：{}", http::shorten(url))));
-        match download::file(&client, url, &archive, manifest.files.zip.size, |progress| {
-            report(Event::Progress {
-                done: progress.done,
-                total: progress.total,
-                speed: progress.speed,
-            });
-        })
-        .await
-        {
-            Ok(response_url) => {
-                fetched = true;
-                used_url = url.clone();
-                final_url = response_url;
-                break;
-            }
-            Err(error) => {
-                last_error = format!("{}：{error}", http::shorten(url));
-                let _ = std::fs::remove_file(&archive);
-            }
-        }
-    }
-    if !fetched {
-        let _ = std::fs::remove_dir_all(&work);
-        return Err(format!("JRE 下载失败：{last_error}"));
-    }
-
-    let actual = fsutil::sha256_file(&archive)?;
-    if actual != manifest.files.zip.sha256 {
-        let _ = std::fs::remove_dir_all(&work);
-        return Err(format!(
-            "JRE 校验失败：期望 {}，实际 {actual}",
-            manifest.files.zip.sha256
-        ));
-    }
+    let source = download_zip(&work, &zip_url, &manifest, proxy, report)?;
 
     report(Event::Extracting);
+    let archive = work.join("jre.zip");
     let unpack = work.join("unpack");
     std::fs::create_dir_all(&unpack).map_err(|error| format!("无法创建临时目录: {error}"))?;
     extract_zip(&archive, &unpack)?;
@@ -208,60 +167,117 @@ async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
     report(Event::Installed {
         id: manifest.id,
         path: install,
-        source: http::source_label(
-            &used_url,
-            &zip_url,
-            &final_url,
-            proxy_configured,
-        ),
+        source,
     });
     Ok(())
 }
 
-async fn fetch_manifest(
-    client: &reqwest::Client,
+fn fetch_manifest(
+    work: &Path,
     proxy: &str,
     report: &impl Fn(Event),
-) -> Result<(Manifest, String, String), String> {
+) -> Result<(Manifest, String), String> {
     let urls = http::github_candidates(MANIFEST_URL, proxy);
     let mut last_error = String::new();
-    for url in &urls {
+    for url in urls {
         report(Event::Log(format!(
             "JRE 清单：{}",
-            http::shorten(url)
+            http::shorten(&url)
         )));
-        match fetch_text(client, url).await {
-            Ok((text, final_url)) => match serde_json::from_str::<Manifest>(&text) {
-                Ok(manifest) => return Ok((manifest, url.clone(), final_url)),
-                Err(error) => {
-                    last_error = format!("{}：清单解析失败：{error}", http::shorten(url));
-                }
+        let list = work.join("manifest.list");
+        aria2::write_list(
+            &list,
+            &[ListEntry {
+                urls: vec![url.clone()],
+                dir: work.to_path_buf(),
+                out: "jre-manifest.json".to_string(),
+                sha256: None,
+            }],
+        )?;
+        match aria2::run_input(
+            &list,
+            |progress| {
+                report(Event::Progress {
+                    done: progress.done,
+                    total: progress.total,
+                    speed: progress.speed,
+                })
             },
-            Err(error) => last_error = format!("{}：{error}", http::shorten(url)),
+            |_| {},
+        ) {
+            Ok(()) => {
+                let text = std::fs::read_to_string(work.join("jre-manifest.json"))
+                    .map_err(|error| format!("无法读取 JRE 清单: {error}"))?;
+                match serde_json::from_str::<Manifest>(&text) {
+                    Ok(manifest) => return Ok((manifest, url)),
+                    Err(error) => {
+                        last_error = format!("{}：清单解析失败：{error}", http::shorten(&url));
+                    }
+                }
+            }
+            Err(error) => last_error = error,
         }
     }
+    let _ = std::fs::remove_dir_all(work);
     Err(format!("无法获取 JRE 清单：{last_error}"))
 }
 
-async fn fetch_text(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<(String, String), String> {
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| format!("无法访问 {}：{error}", http::shorten(url)))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("{} → HTTP {status}", http::shorten(url)));
+fn download_zip(
+    work: &Path,
+    zip_url: &str,
+    manifest: &Manifest,
+    proxy: &str,
+    report: &impl Fn(Event),
+) -> Result<String, String> {
+    let urls = http::github_candidates(zip_url, proxy);
+    let proxy_configured = http::normalize_proxy(proxy).is_some();
+    let mut last_error = String::new();
+    for url in urls {
+        report(Event::Log(format!("JRE：{}", http::shorten(&url))));
+        let list = work.join("zip.list");
+        aria2::write_list(
+            &list,
+            &[ListEntry {
+                urls: vec![url.clone()],
+                dir: work.to_path_buf(),
+                out: "jre.zip".to_string(),
+                sha256: Some(manifest.files.zip.sha256.clone()),
+            }],
+        )?;
+        let result = aria2::run_input(
+            &list,
+            |progress| {
+                report(Event::Progress {
+                    done: progress.done,
+                    total: progress.total,
+                    speed: progress.speed,
+                })
+            },
+            |_| {},
+        );
+        if let Err(error) = result {
+            last_error = error;
+            let _ = std::fs::remove_file(work.join("jre.zip"));
+            continue;
+        }
+        let actual = fsutil::sha256_file(&work.join("jre.zip"))?;
+        if actual != manifest.files.zip.sha256 {
+            last_error = format!(
+                "JRE 校验失败：期望 {}，实际 {actual}",
+                manifest.files.zip.sha256
+            );
+            let _ = std::fs::remove_file(work.join("jre.zip"));
+            continue;
+        }
+        return Ok(http::source_label(
+            &url,
+            zip_url,
+            &url,
+            proxy_configured,
+        ));
     }
-    let final_url = response.url().to_string();
-    let text = response
-        .text()
-        .await
-        .map_err(|error| format!("读取清单失败：{error}"))?;
-    Ok((text, final_url))
+    let _ = std::fs::remove_dir_all(work);
+    Err(format!("JRE 下载失败：{last_error}"))
 }
 
 /// Unpack every regular file, keeping the archive's relative layout.
@@ -274,7 +290,6 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), String> {
             .by_index(index)
             .map_err(|error| format!("解压失败：{error}"))?;
         let Some(relative) = entry.enclosed_name() else {
-            // `..`/absolute paths: never write outside the target.
             continue;
         };
         let out = dest.join(relative);
