@@ -66,6 +66,12 @@ export component AppWindow inherits Window {
     in-out property <float> aria2-progress: 0;
     in-out property <string> aria2-message: "";
 
+    /// JRE install state, same shape as aria2c.
+    in-out property <bool> jre-installed: false;
+    in-out property <bool> jre-busy: false;
+    in-out property <float> jre-progress: 0;
+    in-out property <string> jre-message: "";
+
     /// Settings: the one desktop setting the phone front-end owns today.
     in-out property <string> github-proxy: "";
     in-out property <string> settings-status: "";
@@ -85,6 +91,7 @@ export component AppWindow inherits Window {
     callback login-copy-code;
     callback download-opened;
     callback aria2-install-requested;
+    callback jre-install-requested;
     callback github-proxy-saved(string);
 
     // The download page never reads the disk itself: entering the tab is the
@@ -116,8 +123,15 @@ export component AppWindow inherits Window {
                 aria2-busy: root.aria2-busy;
                 aria2-progress: root.aria2-progress;
                 aria2-message: root.aria2-message;
+                jre-installed: root.jre-installed;
+                jre-busy: root.jre-busy;
+                jre-progress: root.jre-progress;
+                jre-message: root.jre-message;
                 install-requested => {
                     root.aria2-install-requested();
+                }
+                jre-install-requested => {
+                    root.jre-install-requested();
                 }
             }
             if root.tab == Tab.settings : SettingsPage {

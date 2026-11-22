@@ -167,14 +167,29 @@ GitHub 下载统一走设置页的 GitHub Proxy：读写的还是桌面版那份
 字段原样保留。候选顺序和桌面版一致：`proxy/host/...`、`proxy/https://host/...`，
 最后直连。
 
+## JRE
+
+下载页的第二张卡。JRE 来自
+[Tessera-Launcher/BuildJRE4Android](https://github.com/Tessera-Launcher/BuildJRE4Android)，
+不需要 GitHub API：
+
+1. 取 `releases/latest/download/jre-manifest.json`。
+2. 读 `files.zip.name` / `sha256` / `size`。
+3. 下载 `releases/latest/download/<zip name>`，校验后解压。
+
+安装在 **应用私有目录** `files/jre`（`dlopen` 不能从 `noexec` 的 `/sdcard` 加载）。
+先解到 `files/jre.incoming`，完整后再改名替换，所以中断不会留下一个被当成“已安装”的
+半套 JRE。当前清单是 `safe` 档、arm64-v8a、minSdk 28，解包约 117 MB，下载约 40 MB。
+同样走设置里的 GitHub Proxy，安装完成会显示 `代理 …` 或 `直连 …`。
+
 ## 设置
 
 目前只放了 GitHub Proxy，和桌面版同一个文件、同一个键。
 
 ## 下一步
 
-- 接版本列表和安装：把 `mdt-minecraft` 生成的 aria2 列表交给 `aria2c`。还要给
-  aria2 传 `--ca-certificate`（Android 没有 OpenSSL 默认 CA 路径），证书来源可以
-  和登录一样用内置 Mozilla 根证书。
+- 接版本列表和安装：两项依赖就绪后，把 `mdt-minecraft` 生成的 aria2 列表交给
+  `aria2c`。还要给 aria2 传 `--ca-certificate`（Android 没有 OpenSSL 默认 CA
+  路径），证书来源可以和登录一样用内置 Mozilla 根证书。
 - 账户页现在只在打开时读盘；等有了安装流程，再按 `tessera-core` 的 `Effect`
   那套把后台任务接起来。

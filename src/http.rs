@@ -53,6 +53,26 @@ pub fn host_of(url: &str) -> String {
         .to_string()
 }
 
+/// Say which URL served a download. `used` is the candidate that answered;
+/// `direct` is the unproxied URL; `final_url` is where redirects landed, so a
+/// proxy that bounces to a CDN is not mistaken for the proxy itself. When a
+/// proxy was configured but every candidate failed, the fallback is called out
+/// instead of being silent.
+pub fn source_label(used: &str, direct: &str, final_url: &str, proxy_configured: bool) -> String {
+    let label = if used == direct { "直连" } else { "代理" };
+    let used_host = host_of(used);
+    let final_host = host_of(final_url);
+    let mut source = if used_host == final_host {
+        format!("{label} {used_host}")
+    } else {
+        format!("{label} {used_host} → {final_host}")
+    };
+    if proxy_configured && used == direct {
+        source.push_str("（代理失败，已回退）");
+    }
+    source
+}
+
 /// Keep log lines readable: the host and the file name, not the whole URL.
 pub fn shorten(url: &str) -> String {
     let without_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
@@ -138,6 +158,25 @@ mod tests {
         assert_eq!(
             github_candidates("https://github.com/a/x", "  "),
             vec!["https://github.com/a/x"]
+        );
+    }
+
+    #[test]
+    fn the_source_says_proxy_direct_or_fallback() {
+        let direct = "https://github.com/a/x.zip";
+        assert_eq!(source_label(direct, direct, direct, false), "直连 github.com");
+        assert_eq!(
+            source_label(
+                "https://ghfast.top/https://github.com/a/x.zip",
+                direct,
+                "https://ghfast.top/https://github.com/a/x.zip",
+                true
+            ),
+            "代理 ghfast.top"
+        );
+        assert_eq!(
+            source_label(direct, direct, "https://objects.githubusercontent.com/x", true),
+            "直连 github.com → objects.githubusercontent.com（代理失败，已回退）"
         );
     }
 

@@ -14,11 +14,8 @@
 //! leaving a dead binary behind.
 
 use std::fs::File;
-use std::io::{BufReader, Read, Write};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
-
-use sha2::{Digest, Sha256};
 
 use crate::http;
 
@@ -113,7 +110,15 @@ async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
     let mut final_url = String::new();
     for url in &urls {
         report(Event::Log(format!("aria2c：{}", http::shorten(url))));
-        match fetch(&client, url, &archive, BUILD.size, report).await {
+        match crate::download::file(&client, url, &archive, BUILD.size, |progress| {
+            report(Event::Progress {
+                done: progress.done,
+                total: progress.total,
+                speed: progress.speed,
+            });
+        })
+        .await
+        {
             Ok(response_url) => {
                 fetched = true;
                 used_url = url.clone();
@@ -131,7 +136,7 @@ async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
         return Err(format!("aria2c 下载失败：{last_error}"));
     }
 
-    let actual = sha256_file(&archive)?;
+    let actual = crate::fsutil::sha256_file(&archive)?;
     if actual != BUILD.sha256 {
         let _ = std::fs::remove_dir_all(&work);
         return Err(format!(
@@ -163,101 +168,14 @@ async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
     report(Event::Installed {
         version,
         path: binary,
-        source: describe_source(&used_url, &final_url, http::normalize_proxy(proxy).is_some()),
+        source: http::source_label(
+            &used_url,
+            BUILD.url,
+            &final_url,
+            http::normalize_proxy(proxy).is_some(),
+        ),
     });
     Ok(())
-}
-
-/// Stream `url` into `dest`, reporting progress as it goes.
-async fn fetch(
-    client: &reqwest::Client,
-    url: &str,
-    dest: &Path,
-    expected: u64,
-    report: &impl Fn(Event),
-) -> Result<String, String> {
-    let mut response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| format!("无法访问 {}：{error}", http::shorten(url)))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("{} → HTTP {status}", http::shorten(url)));
-    }
-    // `response.url()` is the final URL after redirects: a proxy that hands
-    // the transfer off to a CDN is visible here instead of being guessed at.
-    let response_url = response.url().to_string();
-    let total = response.content_length().unwrap_or(expected);
-    let mut file =
-        File::create(dest).map_err(|error| format!("无法写入 {}: {error}", dest.display()))?;
-
-    let started = Instant::now();
-    let mut last = Instant::now();
-    let mut done = 0u64;
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|error| format!("下载中断：{error}"))?
-    {
-        file.write_all(&chunk)
-            .map_err(|error| format!("无法写入下载结果: {error}"))?;
-        done += chunk.len() as u64;
-        if last.elapsed() >= Duration::from_millis(200) {
-            let elapsed = started.elapsed().as_secs_f64().max(0.001);
-            report(Event::Progress {
-                done,
-                total: total.max(done),
-                speed: done as f64 / elapsed,
-            });
-            last = Instant::now();
-        }
-    }
-    file.sync_all()
-        .map_err(|error| format!("无法写入下载结果: {error}"))?;
-    let elapsed = started.elapsed().as_secs_f64().max(0.001);
-    report(Event::Progress {
-        done,
-        total: total.max(done),
-        speed: done as f64 / elapsed,
-    });
-    Ok(response_url)
-}
-
-/// Say which URL served the bytes. `used` is the candidate that got a 2xx;
-/// `final_url` is where redirects landed, so a proxy that bounces to a CDN is
-/// not mistaken for the proxy itself. When a proxy was configured but every
-/// candidate failed, the fallback to the direct link is called out instead of
-/// being silent.
-fn describe_source(used: &str, final_url: &str, proxy_configured: bool) -> String {
-    let label = if used == BUILD.url { "直连" } else { "代理" };
-    let used_host = http::host_of(used);
-    let final_host = http::host_of(final_url);
-    let mut source = if used_host == final_host {
-        format!("{label} {used_host}")
-    } else {
-        format!("{label} {used_host} → {final_host}")
-    };
-    if proxy_configured && used == BUILD.url {
-        source.push_str("（代理失败，已回退）");
-    }
-    source
-}
-
-fn sha256_file(path: &Path) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|error| format!("无法打开下载文件: {error}"))?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|error| format!("无法读取下载文件: {error}"))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Pull `member` out of a zip archive.
@@ -336,26 +254,6 @@ mod tests {
         assert!(BUILD.sha256.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(BUILD.size > 0);
         assert!(BUILD.member.ends_with("/aria2c"));
-    }
-
-    #[test]
-    fn the_source_says_proxy_direct_or_fallback() {
-        assert_eq!(
-            describe_source(BUILD.url, BUILD.url, false),
-            "直连 github.com"
-        );
-        assert_eq!(
-            describe_source(
-                "https://ghfast.top/https://github.com/a/x.zip",
-                "https://ghfast.top/https://github.com/a/x.zip",
-                true
-            ),
-            "代理 ghfast.top"
-        );
-        assert_eq!(
-            describe_source(BUILD.url, "https://objects.githubusercontent.com/x", true),
-            "直连 github.com → objects.githubusercontent.com（代理失败，已回退）"
-        );
     }
 
     #[test]

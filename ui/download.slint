@@ -1,11 +1,101 @@
-// 下载: the version list lands here once the downloader is installed.
+// 下载: the version list lands here once the two dependencies are installed.
 //
-// The one thing this page owns today is the aria2c prompt. Tapping a tab is
-// not a disk read, so the window asks Rust for the binary when this tab opens;
-// while it is missing, this is all the page shows.
+// The page owns the install prompts only. Tapping a tab is not a disk read, so
+// the window asks Rust for both dependencies when this tab opens; while either
+// is missing, this is all the page shows.
 
 import { Theme } from "theme.slint";
 import { Page, SheetButton } from "page.slint";
+
+/// One missing dependency: title, why it is needed, and its install button.
+component DependencyCard inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <string> info;
+    in property <string> action;
+    in property <bool> busy: false;
+    in property <float> progress: 0;
+    in property <string> message: "";
+    callback install-requested;
+
+    width: 100%;
+    height: 202px;
+    border-radius: 14px;
+    background: Theme.bar;
+    border-width: 1px;
+    border-color: Theme.line;
+
+    Text {
+        x: 18px;
+        y: 14px;
+        text: root.title;
+        font-size: 16px;
+        font-weight: 600;
+        color: Theme.text;
+    }
+
+    Text {
+        x: 18px;
+        y: 38px;
+        width: root.width - 36px;
+        height: 38px;
+        text: root.detail;
+        font-size: 12px;
+        color: Theme.dim;
+        wrap: word-wrap;
+    }
+
+    SheetButton {
+        x: 18px;
+        y: 82px;
+        width: 132px;
+        height: 40px;
+        label: root.busy ? "下载中…" : root.action;
+        clicked => {
+            root.install-requested();
+        }
+    }
+
+    Text {
+        x: 18px;
+        y: 130px;
+        width: root.width - 36px;
+        text: root.info;
+        font-size: 11px;
+        color: Theme.dim;
+    }
+
+    if root.busy || root.progress > 0 : Rectangle {
+        x: 18px;
+        y: 148px;
+        width: root.width - 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.pressed;
+
+        Rectangle {
+            // Explicit x: a child that only declares a size is centred by
+            // Slint, which made the bar grow from the middle.
+            x: 0px;
+            y: 0px;
+            width: (root.width - 36px) * Math.min(1, Math.max(0, root.progress));
+            height: 4px;
+            border-radius: 2px;
+            background: Theme.accent;
+        }
+    }
+
+    if root.message != "" : Text {
+        x: 18px;
+        y: 160px;
+        width: root.width - 36px;
+        height: 36px;
+        text: root.message;
+        font-size: 11px;
+        color: Theme.dim;
+        wrap: word-wrap;
+    }
+}
 
 export component DownloadPage inherits Page {
     title: "下载";
@@ -14,99 +104,63 @@ export component DownloadPage inherits Page {
     in property <bool> aria2-busy: false;
     in property <float> aria2-progress: 0;
     in property <string> aria2-message: "";
-    callback install-requested;
 
-    if !root.aria2-installed : Rectangle {
+    in property <bool> jre-installed: false;
+    in property <bool> jre-busy: false;
+    in property <float> jre-progress: 0;
+    in property <string> jre-message: "";
+
+    callback install-requested;
+    callback jre-install-requested;
+
+    VerticalLayout {
         x: Theme.gutter;
         y: root.top-inset + 72px;
         width: root.width - Theme.gutter * 2;
-        height: 252px;
-        border-radius: 14px;
-        background: Theme.bar;
-        border-width: 1px;
-        border-color: Theme.line;
+        spacing: 12px;
 
-        Text {
-            x: 18px;
-            y: 18px;
-            text: "需要 aria2c";
-            font-size: 17px;
-            font-weight: 600;
-            color: Theme.text;
-        }
-
-        Text {
-            x: 18px;
-            y: 48px;
-            width: root.width - Theme.gutter * 2 - 36px;
-            height: 42px;
-            text: "下载器还没安装。Tessera 用 aria2c 拉取游戏文件，和桌面版走同一条路线。";
-            font-size: 13px;
-            color: Theme.dim;
-            wrap: word-wrap;
-        }
-
-        SheetButton {
-            x: 18px;
-            y: 100px;
-            width: 132px;
-            height: 40px;
-            label: root.aria2-busy ? "下载中…" : "下载 aria2c";
-            clicked => {
+        if !root.aria2-installed : DependencyCard {
+            title: "需要 aria2c";
+            detail: "Tessera 用 aria2c 拉取游戏文件，和桌面版走同一条路线。";
+            info: "官方 1.37.0 · arm64 · 约 2.4 MB";
+            action: "下载 aria2c";
+            busy: root.aria2-busy;
+            progress: root.aria2-progress;
+            message: root.aria2-message;
+            install-requested => {
                 root.install-requested();
             }
         }
 
-        Text {
-            x: 18px;
-            y: 150px;
-            width: root.width - Theme.gutter * 2 - 36px;
-            text: "官方 1.37.0 · arm64 · 约 2.4 MB";
-            font-size: 11px;
-            color: Theme.dim;
-        }
-
-        if root.aria2-busy || root.aria2-progress > 0 : Rectangle {
-            x: 18px;
-            y: 172px;
-            width: root.width - Theme.gutter * 2 - 36px;
-            height: 4px;
-            border-radius: 2px;
-            background: Theme.pressed;
-
-            Rectangle {
-                // Explicit x: a child that only declares a size is centred by
-                // Slint, which made the bar grow from the middle.
-                x: 0px;
-                y: 0px;
-                width: (root.width - Theme.gutter * 2 - 36px) * Math.min(1, Math.max(0, root.aria2-progress));
-                height: 4px;
-                border-radius: 2px;
-                background: Theme.accent;
+        if !root.jre-installed : DependencyCard {
+            title: "需要 JRE";
+            detail: "游戏本体需要 Android arm64 的 OpenJDK 28。下载后解压到应用私有目录。";
+            info: "OpenJDK 28 EA · safe · 约 40 MB";
+            action: "下载 JRE";
+            busy: root.jre-busy;
+            progress: root.jre-progress;
+            message: root.jre-message;
+            install-requested => {
+                root.jre-install-requested();
             }
         }
 
-        if root.aria2-message != "" : Text {
-            x: 18px;
-            y: 186px;
-            width: root.width - Theme.gutter * 2 - 36px;
-            height: 56px;
-            text: root.aria2-message;
-            font-size: 12px;
+        if root.aria2-installed && root.jre-installed : Text {
+            width: 100%;
+            height: 62px;
+            // Keep the last install line (which names the route) visible;
+            // after a restart both messages are empty and the generic hint
+            // takes over.
+            text: (root.aria2-message == "" && root.jre-message == "")
+                ? "aria2c 与 JRE 已就绪，版本列表接下来在这里出现。"
+                : (root.aria2-message == ""
+                    ? root.jre-message
+                    : (root.jre-message == ""
+                        ? root.aria2-message
+                        : root.aria2-message + "\n" + root.jre-message));
+            font-size: 11px;
             color: Theme.dim;
             wrap: word-wrap;
         }
-    }
-
-    if root.aria2-installed : Text {
-        x: Theme.gutter;
-        y: root.top-inset + 96px;
-        width: root.width - Theme.gutter * 2;
-        text: root.aria2-message == ""
-            ? "aria2c 已安装，版本列表接下来在这里出现。"
-            : root.aria2-message;
-        font-size: 13px;
-        color: Theme.dim;
-        wrap: word-wrap;
     }
 }

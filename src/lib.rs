@@ -22,7 +22,10 @@ use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 pub mod accounts;
 pub mod app_ids;
 pub mod aria2;
+pub mod download;
+pub mod fsutil;
 pub mod http;
+pub mod jre;
 pub mod login;
 pub mod settings;
 pub mod platform;
@@ -65,8 +68,11 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         ui.set_settings_status_error(true);
     }
     ui.set_aria2_installed(aria2::installed().is_some());
-    // One install at a time, independent of what the UI property says.
+    ui.set_jre_installed(jre::installed().is_some());
+    // One install at a time per dependency, independent of what the UI property
+    // says.
     let aria2_busy = Arc::new(AtomicBool::new(false));
+    let jre_busy = Arc::new(AtomicBool::new(false));
 
     // The 账户 button on the home page: re-read the directory, then push the
     // screen. Files can change while the screen is closed.
@@ -319,6 +325,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         ui.on_download_opened(move || {
             if let Some(ui) = weak.upgrade() {
                 ui.set_aria2_installed(aria2::installed().is_some());
+                ui.set_jre_installed(jre::installed().is_some());
             }
         });
     }
@@ -400,6 +407,90 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_aria2_busy(false);
                             ui.set_aria2_progress(0.0);
                             ui.set_aria2_message(problem.into());
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    // Install the JRE. Same staging as aria2c: the manifest names the zip and
+    // its hash, and the worker reports through the event loop.
+    {
+        let weak = ui.as_weak();
+        let config = config.clone();
+        let busy = jre_busy.clone();
+        ui.on_jre_install_requested(move || {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if busy.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            if !jre::supported() {
+                busy.store(false, Ordering::SeqCst);
+                ui.set_jre_message("当前平台没有固定构建（需要 Android arm64）".into());
+                return;
+            }
+            ui.set_jre_busy(true);
+            ui.set_jre_progress(0.0);
+            ui.set_jre_message("正在获取 JRE 清单…".into());
+
+            let proxy = config.borrow().github_proxy.clone();
+            let weak = ui.as_weak();
+            let busy = busy.clone();
+            jre::spawn_install(proxy, move |event| {
+                let weak = weak.clone();
+                let busy = busy.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = weak.upgrade() else {
+                        return;
+                    };
+                    match event {
+                        jre::Event::Log(line) => {
+                            ui.set_jre_message(line.into());
+                        }
+                        jre::Event::Progress { done, total, speed } => {
+                            let fraction = if total == 0 {
+                                0.0
+                            } else {
+                                done as f32 / total as f32
+                            };
+                            ui.set_jre_progress(fraction);
+                            let text = if speed > 1.0 {
+                                format!(
+                                    "下载 JRE… {} / {} · {}/s",
+                                    http::human_size(done),
+                                    http::human_size(total),
+                                    http::human_size(speed as u64)
+                                )
+                            } else {
+                                format!(
+                                    "下载 JRE… {} / {}",
+                                    http::human_size(done),
+                                    http::human_size(total)
+                                )
+                            };
+                            ui.set_jre_message(text.into());
+                        }
+                        jre::Event::Extracting => {
+                            ui.set_jre_progress(1.0);
+                            ui.set_jre_message("校验完成，正在解压 JRE…".into());
+                        }
+                        jre::Event::Installed { id, source, .. } => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_jre_busy(false);
+                            ui.set_jre_installed(true);
+                            ui.set_jre_progress(1.0);
+                            ui.set_jre_message(
+                                format!("JRE {id} 已安装 · {source}").into(),
+                            );
+                        }
+                        jre::Event::Failed(problem) => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_jre_busy(false);
+                            ui.set_jre_progress(0.0);
+                            ui.set_jre_message(problem.into());
                         }
                     }
                 });
