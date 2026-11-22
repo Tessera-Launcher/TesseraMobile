@@ -27,6 +27,9 @@ toml = "1"
 # Vendored Microsoft → Xbox Live → Minecraft sign-in. The crate keeps its own
 # [workspace]; a path dependency on it is still fine.
 minecraft-auth = { path = "vendor/minecraft-auth" }
+# Version metadata and the aria2 download list. Local changes are recorded in
+# `vendor/mdt-minecraft/VENDORED.md`.
+mdt-minecraft = { path = "vendor/mdt-minecraft" }
 # Offline identities: Java's `UUID.nameUUIDFromBytes` is MD5 over
 # `OfflinePlayer:<name>` (RFC 4122 version 3).
 md5 = { package = "md-5", version = "0.10" }

@@ -31,6 +31,7 @@ pub mod settings;
 pub mod platform;
 pub mod runtime;
 pub mod state;
+pub mod versions;
 
 slint::include_modules!();
 
@@ -76,6 +77,8 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     let aria2_busy = Arc::new(AtomicBool::new(false));
     let jre_busy = Arc::new(AtomicBool::new(false));
     let runtime_busy = Arc::new(AtomicBool::new(false));
+    let versions_loading = Arc::new(AtomicBool::new(false));
+    let versions_loaded = Arc::new(AtomicBool::new(false));
 
     // The 账户 button on the home page: re-read the directory, then push the
     // screen. Files can change while the screen is closed.
@@ -325,6 +328,8 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     // again instead of trusting the value from startup.
     {
         let weak = ui.as_weak();
+        let versions_loading = versions_loading.clone();
+        let versions_loaded = versions_loaded.clone();
         ui.on_download_opened(move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -352,6 +357,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                 ui.set_runtime_message("".into());
             }
             ui.set_runtime_installed(runtime_now);
+            load_versions(&ui, &versions_loading, &versions_loaded, false);
         });
     }
 
@@ -361,6 +367,8 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         let weak = ui.as_weak();
         let config = config.clone();
         let busy = aria2_busy.clone();
+        let versions_loading = versions_loading.clone();
+        let versions_loaded = versions_loaded.clone();
         ui.on_aria2_install_requested(move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -380,9 +388,13 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let proxy = config.borrow().github_proxy.clone();
             let weak = ui.as_weak();
             let busy = busy.clone();
+            let versions_loading = versions_loading.clone();
+            let versions_loaded = versions_loaded.clone();
             aria2::spawn_install(proxy, move |event| {
                 let weak = weak.clone();
                 let busy = busy.clone();
+                let versions_loading = versions_loading.clone();
+                let versions_loaded = versions_loaded.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = weak.upgrade() else {
                         return;
@@ -426,6 +438,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_aria2_message(
                                 format!("aria2c {version} 已安装 · {source}").into(),
                             );
+                            load_versions(&ui, &versions_loading, &versions_loaded, false);
                         }
                         aria2::Event::Failed(problem) => {
                             busy.store(false, Ordering::SeqCst);
@@ -445,6 +458,8 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         let weak = ui.as_weak();
         let config = config.clone();
         let busy = jre_busy.clone();
+        let versions_loading = versions_loading.clone();
+        let versions_loaded = versions_loaded.clone();
         ui.on_jre_install_requested(move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -469,9 +484,13 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let proxy = config.borrow().github_proxy.clone();
             let weak = ui.as_weak();
             let busy = busy.clone();
+            let versions_loading = versions_loading.clone();
+            let versions_loaded = versions_loaded.clone();
             jre::spawn_install(proxy, move |event| {
                 let weak = weak.clone();
                 let busy = busy.clone();
+                let versions_loading = versions_loading.clone();
+                let versions_loaded = versions_loaded.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = weak.upgrade() else {
                         return;
@@ -515,6 +534,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_jre_message(
                                 format!("JRE {id} 已安装 · {source}").into(),
                             );
+                            load_versions(&ui, &versions_loading, &versions_loaded, false);
                         }
                         jre::Event::Failed(problem) => {
                             busy.store(false, Ordering::SeqCst);
@@ -534,6 +554,8 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         let weak = ui.as_weak();
         let config = config.clone();
         let busy = runtime_busy.clone();
+        let versions_loading = versions_loading.clone();
+        let versions_loaded = versions_loaded.clone();
         ui.on_runtime_install_requested(move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -558,9 +580,13 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let proxy = config.borrow().github_proxy.clone();
             let weak = ui.as_weak();
             let busy = busy.clone();
+            let versions_loading = versions_loading.clone();
+            let versions_loaded = versions_loaded.clone();
             runtime::spawn_install(proxy, move |event| {
                 let weak = weak.clone();
                 let busy = busy.clone();
+                let versions_loading = versions_loading.clone();
+                let versions_loaded = versions_loaded.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = weak.upgrade() else {
                         return;
@@ -601,7 +627,8 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_runtime_busy(false);
                             ui.set_runtime_installed(true);
                             ui.set_runtime_progress(1.0);
-                            ui.set_runtime_message("Android 运行库已安装".into());
+                            ui.set_runtime_message("MobileGlues 渲染器已安装".into());
+                            load_versions(&ui, &versions_loading, &versions_loaded, false);
                         }
                         runtime::Event::Failed(problem) => {
                             busy.store(false, Ordering::SeqCst);
@@ -612,6 +639,19 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                     }
                 });
             });
+        });
+    }
+
+    // The version list's refresh button: force a new fetch even if the last
+    // one succeeded.
+    {
+        let weak = ui.as_weak();
+        let versions_loading = versions_loading.clone();
+        let versions_loaded = versions_loaded.clone();
+        ui.on_versions_refresh(move || {
+            if let Some(ui) = weak.upgrade() {
+                load_versions(&ui, &versions_loading, &versions_loaded, true);
+            }
         });
     }
 
@@ -716,6 +756,65 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
 fn reload_for(ui: &AppWindow, state: &Rc<RefCell<State>>, rows: &Rc<VecModel<AccountRow>>) {
     state.borrow_mut().reload();
     refresh(ui, state, rows);
+}
+
+/// Fetch the Minecraft version index once all four pieces are installed.
+///
+/// Runs from the UI thread (either a tab open, an install completion, or the
+/// refresh button), so it reads the current installed properties instead of
+/// keeping a second copy of the dependency state.
+fn load_versions(
+    ui: &AppWindow,
+    loading: &Arc<AtomicBool>,
+    loaded: &Arc<AtomicBool>,
+    force: bool,
+) {
+    if !(ui.get_aria2_installed() && ui.get_jre_installed() && ui.get_runtime_installed()) {
+        return;
+    }
+    if loading.load(Ordering::SeqCst) {
+        return;
+    }
+    if !force && loaded.load(Ordering::SeqCst) {
+        return;
+    }
+    loading.store(true, Ordering::SeqCst);
+    loaded.store(false, Ordering::SeqCst);
+    ui.set_versions_loading(true);
+    ui.set_versions_error("".into());
+
+    let weak = ui.as_weak();
+    let loading = loading.clone();
+    let loaded = loaded.clone();
+    versions::spawn(move |result| {
+        let weak = weak.clone();
+        let loading = loading.clone();
+        let loaded = loaded.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            loading.store(false, Ordering::SeqCst);
+            ui.set_versions_loading(false);
+            match result {
+                Ok(rows) => {
+                    loaded.store(true, Ordering::SeqCst);
+                    let built: Vec<VersionRow> = rows
+                        .into_iter()
+                        .map(|version| VersionRow {
+                            id: version.id.into(),
+                            kind: version.kind.into(),
+                            date: version.date.into(),
+                        })
+                        .collect();
+                    ui.set_versions(ModelRc::from(Rc::new(VecModel::from_slice(&built))));
+                }
+                Err(problem) => {
+                    ui.set_versions_error(problem.into());
+                }
+            }
+        });
+    });
 }
 
 /// Rebuild the row model from the state that is already in memory.

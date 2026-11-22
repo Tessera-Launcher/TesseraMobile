@@ -5,7 +5,8 @@
 // is missing, this is all the page shows.
 
 import { Theme } from "theme.slint";
-import { Page, SheetButton } from "page.slint";
+import { ListView } from "std-widgets.slint";
+import { Page, HeaderButton, SheetButton } from "page.slint";
 
 /// One missing dependency: title, why it is needed, and its install button.
 component DependencyCard inherits Rectangle {
@@ -103,6 +104,46 @@ component DependencyCard inherits Rectangle {
     }
 }
 
+export struct VersionRow {
+    id: string,
+    kind: string,
+    date: string,
+}
+
+component VersionRowView inherits Rectangle {
+    in property <VersionRow> version;
+
+    height: 54px;
+    background: touch.pressed ? Theme.pressed : transparent;
+
+    Text {
+        x: 0px;
+        y: 7px;
+        width: 100%;
+        text: root.version.id;
+        font-size: 15px;
+        color: Theme.text;
+    }
+
+    Text {
+        x: 0px;
+        y: 29px;
+        width: 100%;
+        text: root.version.kind + " · " + root.version.date;
+        font-size: 11px;
+        color: Theme.dim;
+    }
+
+    Rectangle {
+        y: root.height - Theme.hairline;
+        width: 100%;
+        height: Theme.hairline;
+        background: Theme.line;
+    }
+
+    touch := TouchArea { }
+}
+
 export component DownloadPage inherits Page {
     title: "下载";
 
@@ -121,13 +162,88 @@ export component DownloadPage inherits Page {
     in property <float> runtime-progress: 0;
     in property <string> runtime-message: "";
 
+    in property <[VersionRow]> versions;
+    in property <bool> versions-loading: false;
+    in property <string> versions-error: "";
+
     callback install-requested;
     callback jre-install-requested;
     callback runtime-install-requested;
+    callback refresh-versions;
+
+    property <bool> ready: root.aria2-installed && root.jre-installed && root.runtime-installed;
+
+    // Only the full dependency set unlocks the index.
+    if root.ready : VerticalLayout {
+        x: Theme.gutter;
+        y: root.top-inset + 64px;
+        width: root.width - Theme.gutter * 2;
+        height: root.height - (root.top-inset + 64px) - 8px;
+        spacing: 0px;
+
+        Rectangle {
+            height: 38px;
+            background: transparent;
+
+            Text {
+                x: 0px;
+                y: 8px;
+                text: "版本列表 · " + root.versions.length + " 个";
+                font-size: 15px;
+                font-weight: 600;
+                color: Theme.text;
+            }
+
+            HeaderButton {
+                x: parent.width - self.width;
+                y: 4px;
+                label: "刷新";
+                clicked => {
+                    root.refresh-versions();
+                }
+            }
+        }
+
+        if root.runtime-message != "" || root.jre-message != "" || root.aria2-message != "" : Text {
+            width: 100%;
+            height: 20px;
+            text: root.runtime-message != ""
+                ? root.runtime-message
+                : (root.jre-message != "" ? root.jre-message : root.aria2-message);
+            font-size: 11px;
+            color: Theme.dim;
+        }
+
+        if root.versions-loading : Text {
+            width: 100%;
+            height: 40px;
+            text: "正在获取版本列表…";
+            font-size: 13px;
+            color: Theme.dim;
+            vertical-alignment: center;
+        }
+
+        if !root.versions-loading && root.versions-error != "" : Text {
+            width: 100%;
+            height: 72px;
+            text: root.versions-error + "（点刷新重试）";
+            font-size: 12px;
+            color: Theme.danger;
+            wrap: word-wrap;
+        }
+
+        if !root.versions-loading && root.versions-error == "" : ListView {
+            vertical-stretch: 1;
+
+            for row in root.versions : VersionRowView {
+                version: row;
+            }
+        }
+    }
 
     // Three cards do not fit on every phone; the page pans instead of clipping
     // the third one.
-    Flickable {
+    if !root.ready : Flickable {
         x: Theme.gutter;
         y: root.top-inset + 64px;
         width: root.width - Theme.gutter * 2;
@@ -139,62 +255,45 @@ export component DownloadPage inherits Page {
             spacing: 12px;
 
             if !root.aria2-installed : DependencyCard {
-            title: "需要 aria2c";
-            detail: "Tessera 用 aria2c 拉取游戏文件，和桌面版走同一条路线。";
-            info: "官方 1.37.0 · arm64 · 约 2.4 MB";
-            action: "下载 aria2c";
-            busy: root.aria2-busy;
-            progress: root.aria2-progress;
-            message: root.aria2-message;
-            install-requested => {
-                root.install-requested();
+                title: "需要 aria2c";
+                detail: "Tessera 用 aria2c 拉取游戏文件，和桌面版走同一条路线。";
+                info: "官方 1.37.0 · arm64 · 约 2.4 MB";
+                action: "下载 aria2c";
+                busy: root.aria2-busy;
+                progress: root.aria2-progress;
+                message: root.aria2-message;
+                install-requested => {
+                    root.install-requested();
+                }
+            }
+
+            if !root.jre-installed : DependencyCard {
+                title: "需要 JRE";
+                detail: "游戏本体需要 Android arm64 的 OpenJDK 28。下载后解压到应用私有目录。";
+                info: "OpenJDK 28 EA · safe · 约 40 MB";
+                action: "下载 JRE";
+                busy: root.jre-busy;
+                progress: root.jre-progress;
+                message: root.jre-message;
+                enabled: root.aria2-installed;
+                install-requested => {
+                    root.jre-install-requested();
+                }
+            }
+
+            if !root.runtime-installed : DependencyCard {
+                title: "需要运行库";
+                detail: "Android 版 LWJGL 3.4.1、OpenAL、SDL、JNA 和 MobileGlues 渲染器，借用 FCL 的构建。";
+                info: "LWJGL 3.4.1 · MobileGlues · arm64 · 约 46 MB";
+                action: "下载运行库";
+                busy: root.runtime-busy;
+                progress: root.runtime-progress;
+                message: root.runtime-message;
+                enabled: root.aria2-installed;
+                install-requested => {
+                    root.runtime-install-requested();
+                }
             }
         }
-
-        if !root.jre-installed : DependencyCard {
-            title: "需要 JRE";
-            detail: "游戏本体需要 Android arm64 的 OpenJDK 28。下载后解压到应用私有目录。";
-            info: "OpenJDK 28 EA · safe · 约 40 MB";
-            action: "下载 JRE";
-            busy: root.jre-busy;
-            progress: root.jre-progress;
-            message: root.jre-message;
-            enabled: root.aria2-installed;
-            install-requested => {
-                root.jre-install-requested();
-            }
-        }
-
-        if !root.runtime-installed : DependencyCard {
-            title: "需要运行库";
-            detail: "Android 版 LWJGL 3.4.1、OpenAL、SDL、JNA 和 MobileGlues 渲染器，借用 FCL 的构建。";
-            info: "LWJGL 3.4.1 · MobileGlues · arm64 · 约 46 MB";
-            action: "下载运行库";
-            busy: root.runtime-busy;
-            progress: root.runtime-progress;
-            message: root.runtime-message;
-            enabled: root.aria2-installed;
-            install-requested => {
-                root.runtime-install-requested();
-            }
-        }
-
-        if root.aria2-installed && root.jre-installed && root.runtime-installed : Text {
-            width: 100%;
-            height: 62px;
-            // Keep the last install line (which names the route) visible;
-            // after a restart both messages are empty and the generic hint
-            // takes over.
-            text: "aria2c、JRE 与运行库已就绪，版本列表接下来在这里出现。"
-                + (root.runtime-message != ""
-                    ? "\n" + root.runtime-message
-                    : (root.jre-message != ""
-                        ? "\n" + root.jre-message
-                        : (root.aria2-message != "" ? "\n" + root.aria2-message : "")));
-            font-size: 11px;
-            color: Theme.dim;
-            wrap: word-wrap;
-        }
-    }
     }
 }

@@ -7,7 +7,7 @@
 import { Theme } from "theme.slint";
 import { BottomBar, Tab } from "navbar.slint";
 import { HomePage } from "home.slint";
-import { DownloadPage } from "download.slint";
+import { DownloadPage, VersionRow } from "download.slint";
 import { SettingsPage } from "settings.slint";
 import { AccountsPage, AccountRow } from "accounts_page.slint";
 import { LoginPage, IdentityRow, LoginPhase } from "login_page.slint";
@@ -78,6 +78,11 @@ export component AppWindow inherits Window {
     in-out property <float> runtime-progress: 0;
     in-out property <string> runtime-message: "";
 
+    /// Minecraft versions, fetched once all dependencies are in place.
+    in-out property <[VersionRow]> versions;
+    in-out property <bool> versions-loading: false;
+    in-out property <string> versions-error: "";
+
     /// Settings: the one desktop setting the phone front-end owns today.
     in-out property <string> github-proxy: "";
     in-out property <string> settings-status: "";
@@ -99,6 +104,7 @@ export component AppWindow inherits Window {
     callback aria2-install-requested;
     callback jre-install-requested;
     callback runtime-install-requested;
+    callback versions-refresh;
     callback github-proxy-saved(string);
 
     // The download page never reads the disk itself: entering the tab is the
@@ -138,6 +144,9 @@ export component AppWindow inherits Window {
                 runtime-busy: root.runtime-busy;
                 runtime-progress: root.runtime-progress;
                 runtime-message: root.runtime-message;
+                versions: root.versions;
+                versions-loading: root.versions-loading;
+                versions-error: root.versions-error;
                 install-requested => {
                     root.aria2-install-requested();
                 }
@@ -146,6 +155,9 @@ export component AppWindow inherits Window {
                 }
                 runtime-install-requested => {
                     root.runtime-install-requested();
+                }
+                refresh-versions => {
+                    root.versions-refresh();
                 }
             }
             if root.tab == Tab.settings : SettingsPage {

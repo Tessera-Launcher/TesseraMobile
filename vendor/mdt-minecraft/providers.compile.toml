@@ -1,0 +1,52 @@
+# Mirror source providers.
+#
+# Each `[provider_name]` section declares one mirror provider. The keys are the
+# endpoint / base-URL fields consumed by MDT — see docs/mirror_uri.md for the
+# URI specification and docs/mirror_toml.md for the TOML layout. The two built-in
+# providers (`mojang`, `bmclapi`) must always be present; extra `[name]` sections
+# may be added freely to register additional mirrors.
+
+[mojang]
+minecraft = "https://piston-meta.mojang.com/mc/game/version_manifest.json"
+fabric = "https://meta.fabricmc.net/v2/versions"
+fabric_maven = "https://maven.fabricmc.net"
+fabric_meta = "https://meta.fabricmc.net"
+
+[bmclapi]
+minecraft = "https://bmclapi2.bangbang93.com/mc/game/version_manifest.json"
+fabric = "https://bmclapi2.bangbang93.com/fabric-meta/v2/versions"
+fabric_maven = "https://bmclapi2.bangbang93.com/maven"
+fabric_meta = "https://bmclapi2.bangbang93.com/fabric-meta"
+
+# URL rewriting applied by `ManifestUrls::apply_mirror` (asset / version-json URLs),
+# in order. A provider with no `mirror` rules (e.g. `mojang`) leaves URLs unchanged.
+[[bmclapi.mirror]]
+from = "https://libraries.minecraft.net"
+to = "https://bmclapi2.bangbang93.com/maven"
+
+[[bmclapi.mirror]]
+from = "https://piston-data.mojang.com"
+to = "https://bmclapi2.bangbang93.com"
+
+[[bmclapi.mirror]]
+from = "https://piston-meta.mojang.com"
+to = "https://bmclapi2.bangbang93.com"
+
+[[bmclapi.mirror]]
+from = "https://launchermeta.mojang.com"
+to = "https://bmclapi2.bangbang93.com"
+
+[[bmclapi.mirror]]
+from = "https://resources.download.minecraft.net"
+to = "https://bmclapi2.bangbang93.com/assets"
+
+# Maven URL rewriting applied by `ManifestUrls::apply_maven_mirror`, in order.
+# Maven 走教育网镜像（SJTU 的 /bmclapi 实测 21.8 MiB/s，bmclapi2 直连 4.7 MiB/s）。
+# 资源对象与客户端 jar 没有 EDU 副本，仍由上面的 `mirror` 表指向 BMCLAPI 本体。
+[[bmclapi.maven]]
+from = "https://maven.fabricmc.net"
+to = "https://mirror.sjtu.edu.cn/bmclapi"
+
+[[bmclapi.maven]]
+from = "https://libraries.minecraft.net"
+to = "https://mirror.sjtu.edu.cn/bmclapi"

@@ -219,6 +219,18 @@ MobileGlues 按 FCL 的接法：`-Dorg.lwjgl.opengl.libname=libmobileglues.so`�
 `POJAV_RENDERER=opengles3_mobileglues`、`LIBGL_ES=3`、`LIBGL_EGL=libmobileglues.so`、
 `POJAVEXEC_EGL=libmobileglues.so`、`MG_DIR_PATH=<private>/mobileglues`。
 
+## 版本列表
+
+aria2c、JRE、运行库（含 MobileGlues）三项都装好后，下载页从依赖卡片切换到版本列表：
+
+- 版本索引来自 `vendor/mdt-minecraft`，先走 BMCLAPI，失败自动回落 Mojang。
+- MDT 默认会构造自己的 reqwest client；Android 上那条路会走
+  `rustls-platform-verifier` 并 panic，所以本地给 MDT 打了一个小补丁：
+  注入 `HttpDownloader` 时跳过默认 client（记录在 `vendor/mdt-minecraft/VENDORED.md`）。
+- 列表显示版本号、渠道（正式版 / 快照 / 旧版）和发布日期，按清单原顺序（新到旧）。
+- 进入下载页或最后一项依赖装完时自动拉取；右上角「刷新」强制重取。
+- 现在只是只读列表，点选版本和安装流程还没接。
+
 ## 设置
 
 GitHub Proxy，和桌面版同一个文件、同一个键。页面底部注明 Android 运行库借用自
@@ -230,8 +242,8 @@ Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 
 ## 下一步
 
-- 接版本列表和安装：把 `mdt-minecraft` 生成的 aria2 列表交给 `aria2c`；计划里过滤
-  `org.lwjgl`，natives 换成上面这套私有运行库。
+- 接版本安装：从版本列表选一个版本，把 `mdt-minecraft` 生成的 aria2 列表交给
+  `aria2c`；计划里过滤 `org.lwjgl`，natives 换成上面这套私有运行库。
 - 启动参数按 FCL 的形态接上（`os.name`、`org.lwjgl.librarypath`、
   `java.library.path`、JNA 路径）。
 - 账户页现在只在打开时读盘；等有了安装流程，再按 `tessera-core` 的 `Effect`
