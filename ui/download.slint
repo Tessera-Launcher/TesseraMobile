@@ -206,6 +206,65 @@ component VersionRowView inherits Rectangle {
     }
 }
 
+component LoaderChoice inherits Rectangle {
+    in property <string> label;
+    in property <string> detail;
+    in property <bool> selected: false;
+    callback clicked;
+
+    height: 70px;
+    border-radius: 12px;
+    background: root.selected ? Theme.pressed : Theme.bar;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent : Theme.line;
+
+    Text {
+        x: 14px;
+        y: 12px;
+        width: root.width - 52px;
+        text: root.label;
+        font-size: 15px;
+        font-weight: 600;
+        color: Theme.text;
+    }
+
+    Text {
+        x: 14px;
+        y: 36px;
+        width: root.width - 52px;
+        text: root.detail;
+        font-size: 11px;
+        color: Theme.dim;
+        wrap: word-wrap;
+    }
+
+    Rectangle {
+        x: root.width - 32px;
+        y: 25px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: transparent;
+        border-width: 1.5px;
+        border-color: root.selected ? Theme.accent : Theme.dim;
+
+        if root.selected : Rectangle {
+            x: 4px;
+            y: 4px;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background: Theme.accent;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 export component DownloadPage inherits Page {
     title: "下载";
 
@@ -231,6 +290,7 @@ export component DownloadPage inherits Page {
     in property <bool> versions-loading: false;
     in property <string> versions-error: "";
     in property <string> install-version: "";
+    in property <bool> install-configuring: false;
     in property <bool> install-busy: false;
     in property <string> install-log: "";
     in property <string> install-summary: "";
@@ -243,7 +303,15 @@ export component DownloadPage inherits Page {
     callback versions-refilter(VersionFilter, string);
     callback version-group-toggled(string);
     callback version-install(string);
+    callback install-start(bool);
     callback install-dismissed;
+
+    // Local choice on the configuration page; reset when a new version is
+    // selected (Rust clears install-version on back as well).
+    property <bool> fabric-selected: false;
+    changed install-version => {
+        root.fabric-selected = false;
+    }
 
     property <bool> ready: root.aria2-installed && root.jre-installed && root.runtime-installed;
 
@@ -454,8 +522,88 @@ export component DownloadPage inherits Page {
         }
     }
 
+    // Choosing what to install; still a full page, not a sheet.
+    if root.install-version != "" && root.install-configuring : Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: Theme.bg;
+
+        VerticalLayout {
+            x: Theme.gutter;
+            y: root.top-inset + 18px;
+            width: root.width - Theme.gutter * 2;
+            height: root.height - (root.top-inset + 18px) - 8px;
+            spacing: 10px;
+
+            Rectangle {
+                height: 42px;
+                background: transparent;
+
+                Text {
+                    x: 0px;
+                    y: 7px;
+                    text: "安装 " + root.install-version;
+                    font-size: 22px;
+                    font-weight: 600;
+                    color: Theme.text;
+                }
+
+                HeaderButton {
+                    x: parent.width - self.width;
+                    y: 6px;
+                    label: "返回";
+                    clicked => {
+                        root.install-dismissed();
+                    }
+                }
+            }
+
+            Text {
+                height: 26px;
+                text: "附加内容";
+                font-size: 15px;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+
+            LoaderChoice {
+                label: "无";
+                detail: "只安装 Minecraft 本体。";
+                selected: !root.fabric-selected;
+                clicked => {
+                    root.fabric-selected = false;
+                }
+            }
+
+            LoaderChoice {
+                label: "Fabric Loader & API";
+                detail: "安装 Fabric Loader，并自动带上 Fabric API（1.14+）。";
+                selected: root.fabric-selected;
+                clicked => {
+                    root.fabric-selected = true;
+                }
+            }
+
+            Rectangle {
+                height: 10px;
+                background: transparent;
+            }
+
+            SheetButton {
+                width: 120px;
+                label: "安装";
+                clicked => {
+                    root.install-start(root.fabric-selected);
+                }
+            }
+        }
+    }
+
     // The install screen replaces the version list; it is not a dialog.
-    if root.install-version != "" : Rectangle {
+    if root.install-version != "" && !root.install-configuring : Rectangle {
         x: 0;
         y: 0;
         width: 100%;

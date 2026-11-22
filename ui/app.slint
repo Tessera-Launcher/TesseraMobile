@@ -91,6 +91,7 @@ export component AppWindow inherits Window {
     in-out property <VersionFilter> version-filter: VersionFilter.all;
     in-out property <int> version-count: 0;
     in-out property <string> install-version: "";
+    in-out property <bool> install-configuring: false;
     in-out property <bool> install-busy: false;
     in-out property <string> install-log: "";
     in-out property <string> install-summary: "";
@@ -122,6 +123,7 @@ export component AppWindow inherits Window {
     callback versions-refilter(VersionFilter, string);
     callback version-group-toggled(string);
     callback version-install(string);
+    callback install-start(bool);
     callback install-dismissed;
     callback github-proxy-saved(string);
 
@@ -174,6 +176,7 @@ export component AppWindow inherits Window {
                 version-filter <=> root.version-filter;
                 version-count: root.version-count;
                 install-version: root.install-version;
+                install-configuring: root.install-configuring;
                 install-busy: root.install-busy;
                 install-log: root.install-log;
                 install-summary: root.install-summary;
@@ -198,6 +201,9 @@ export component AppWindow inherits Window {
                 }
                 version-install(version) => {
                     root.version-install(version);
+                }
+                install-start(fabric) => {
+                    root.install-start(fabric);
                 }
                 install-dismissed => {
                     root.install-dismissed();

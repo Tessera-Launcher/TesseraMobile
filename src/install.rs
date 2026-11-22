@@ -1,4 +1,4 @@
-//! Vanilla version install: MDT writes the plan, aria2 moves the bytes.
+//! Version install: MDT writes the plan, aria2 moves the bytes.
 //!
 //! The game tree lives at `<data>/游戏`, the same directory name and layout the
 //! desktop build uses (`versions/`, `libraries/`, `assets/`). MDT only resolves
@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use mdt::{HttpDownloader, MdtClient, Mirror, NoopReporter};
+use mdt::{manifest, HttpDownloader, MdtClient, Mirror, ModLoader, NoopReporter};
 
 use crate::aria2;
 use crate::http;
@@ -19,6 +19,33 @@ use crate::http;
 /// `<data>/游戏`.
 pub fn game_root() -> PathBuf {
     crate::platform::data_dir().join("游戏")
+}
+
+/// What the user attached to the selected version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Loader {
+    /// The game alone.
+    #[default]
+    None,
+    /// Fabric Loader plus the Fabric API jar.
+    Fabric,
+}
+
+impl Loader {
+    pub fn from_fabric(fabric: bool) -> Self {
+        if fabric {
+            Loader::Fabric
+        } else {
+            Loader::None
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Loader::None => "无",
+            Loader::Fabric => "Fabric Loader & API",
+        }
+    }
 }
 
 /// What the install worker reports.
@@ -35,20 +62,20 @@ pub enum Event {
     Failed(String),
 }
 
-pub fn spawn(version: String, report: impl Fn(Event) + Send + 'static) {
+pub fn spawn(version: String, loader: Loader, report: impl Fn(Event) + Send + 'static) {
     std::thread::spawn(move || {
         let result = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| format!("无法创建异步运行时: {error}"))
-            .and_then(|runtime| runtime.block_on(install(&version, &report)));
+            .and_then(|runtime| runtime.block_on(install(&version, loader, &report)));
         if let Err(problem) = result {
             report(Event::Failed(problem));
         }
     });
 }
 
-async fn install(version: &str, report: &impl Fn(Event)) -> Result<(), String> {
+async fn install(version: &str, loader: Loader, report: &impl Fn(Event)) -> Result<(), String> {
     if aria2::installed().is_none() {
         return Err("请先安装 aria2c，再安装游戏".to_string());
     }
@@ -77,13 +104,34 @@ async fn install(version: &str, report: &impl Fn(Event)) -> Result<(), String> {
         .build()
         .map_err(|error| format!("无法初始化下载器：{error}"))?;
 
+    report(Event::Log(format!("安装 {version}（{}）", loader.label())));
     report(Event::Log(format!("解析 {version} 的版本清单…")));
-    // `plan_vanilla` writes the complete aria2 list into `缓存/<id>.txt`; it
-    // downloads nothing. This is the same artifact the desktop passes to aria2.
-    let plan = mdt
-        .plan_vanilla(version)
-        .await
-        .map_err(|error| format!("无法解析 {version}：{error}"))?;
+    // MDT writes the complete aria2 list into `缓存/<id>.txt`; it downloads
+    // nothing. This is the same artifact the desktop passes to aria2.
+    let mut plan = match loader {
+        Loader::None => mdt
+            .plan_vanilla(version)
+            .await
+            .map_err(|error| format!("无法解析 {version}：{error}"))?,
+        Loader::Fabric => {
+            let loader_version = resolve_fabric_version(&mdt, version).await?;
+            report(Event::Log(format!("Fabric Loader {loader_version}")));
+            mdt.plan_loader(version, ModLoader::Fabric, &loader_version)
+                .await
+                .map_err(|error| format!("无法安装 Fabric：{error}"))?
+        }
+    };
+    if loader == Loader::Fabric {
+        let added = add_fabric_api(&mut plan, version, report).await;
+        // `plan_loader` wrote the list before the API was appended; rewrite it
+        // so aria2 sees the mod jar too.
+        plan.write(&root, &cache)
+            .await
+            .map_err(|error| format!("无法写入下载清单：{error}"))?;
+        if added {
+            report(Event::Log("Fabric API 已加入下载清单".to_string()));
+        }
+    }
     let list = plan.path(&cache);
     report(Event::Log(format!(
         "清单：{} 个文件 · {}",
@@ -130,6 +178,65 @@ async fn install(version: &str, report: &impl Fn(Event)) -> Result<(), String> {
         seconds: started.elapsed().as_secs_f64(),
     });
     Ok(())
+}
+
+/// Latest stable Fabric loader build from Fabric's meta manifest.
+async fn resolve_fabric_version(mdt: &MdtClient, version: &str) -> Result<String, String> {
+    let versions = manifest::fetch_fabric_manifest(mdt.downloader(), mdt.mirror())
+        .await
+        .map_err(|error| format!("获取 Fabric 版本列表失败：{error}"))?;
+    versions
+        .loader
+        .first()
+        .map(|entry| entry.version.clone())
+        .ok_or_else(|| format!("Fabric 没有适用于 {version} 的版本"))
+}
+
+/// Append Fabric API to `mods/` under the loader's version directory.
+///
+/// A missing API must not throw away the several hundred megabytes about to be
+/// downloaded, so metadata failures are logged and the loader install continues.
+async fn add_fabric_api(
+    plan: &mut mdt::plan::DownloadPlan,
+    mc_version: &str,
+    report: &impl Fn(Event),
+) -> bool {
+    report(Event::Log("Fabric API：解析版本…".to_string()));
+    let api = match crate::fabric_api::resolve(mc_version).await {
+        Ok(Some(api)) => api,
+        Ok(None) => {
+            report(Event::Log(format!(
+                "Fabric API：没有适用于 {mc_version} 的版本 —— 未安装"
+            )));
+            return false;
+        }
+        Err(error) => {
+            report(Event::Log(format!(
+                "Fabric API：获取失败（{error}）—— 未安装"
+            )));
+            return false;
+        }
+    };
+    report(Event::Log(format!(
+        "Fabric API {}（{}，{}）",
+        api.version,
+        api.origin.label(),
+        http::human_size(api.size)
+    )));
+    let path = PathBuf::from("versions")
+        .join(&plan.id)
+        .join("mods")
+        .join(api.file_name());
+    if plan.entries.iter().any(|entry| entry.path == path) {
+        return false;
+    }
+    plan.entries.push(mdt::plan::PlanEntry {
+        url: api.url,
+        path,
+        size: api.size,
+        sha1: api.sha1,
+    });
+    true
 }
 
 #[cfg(test)]

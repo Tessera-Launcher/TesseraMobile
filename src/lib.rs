@@ -25,6 +25,7 @@ pub mod accounts;
 pub mod app_ids;
 pub mod aria2;
 pub mod download;
+pub mod fabric_api;
 pub mod fsutil;
 pub mod http;
 pub mod install;
@@ -734,32 +735,57 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     }
 
-    // Installing a version: MDT writes the list into `缓存`, aria2 downloads
-    // it, then the plan is verified and natives are unpacked. The install tab
-    // is a full screen, not a popup; its activity log is the only progress.
+    // Installing a version: tap a row, choose optional content, then start.
+    // The configuration and the activity log are two full-screen states of the
+    // download tab, not popups.
     {
+        let lines = Arc::new(Mutex::new(VecDeque::<String>::new()));
+
         let weak = ui.as_weak();
         let busy = install_busy.clone();
-        let lines = Arc::new(Mutex::new(VecDeque::<String>::new()));
+        let selected_lines = lines.clone();
         ui.on_version_install(move |version| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if busy.load(Ordering::SeqCst) {
+                return;
+            }
+            let version = version.to_string();
+            selected_lines.lock().unwrap().clear();
+            ui.set_install_version(version.into());
+            ui.set_install_configuring(true);
+            ui.set_install_busy(false);
+            ui.set_install_log("".into());
+            ui.set_install_summary("".into());
+            ui.set_install_failed(false);
+        });
+
+        let weak = ui.as_weak();
+        let busy = install_busy.clone();
+        let start_lines = lines.clone();
+        ui.on_install_start(move |fabric| {
             let Some(ui) = weak.upgrade() else {
                 return;
             };
             if busy.swap(true, Ordering::SeqCst) {
                 return;
             }
-            let version = version.to_string();
-            lines.lock().unwrap().clear();
-            ui.set_install_version(version.clone().into());
+            let version = ui.get_install_version().to_string();
+            if version.is_empty() {
+                busy.store(false, Ordering::SeqCst);
+                return;
+            }
+            ui.set_install_configuring(false);
             ui.set_install_busy(true);
-            ui.set_install_log("".into());
             ui.set_install_summary("下载中，进度见上方日志".into());
             ui.set_install_failed(false);
 
             let weak = ui.as_weak();
             let busy = busy.clone();
-            let lines = lines.clone();
-            install::spawn(version, move |event| {
+            let lines = start_lines.clone();
+            let loader = install::Loader::from_fabric(fabric);
+            install::spawn(version, loader, move |event| {
                 let weak = weak.clone();
                 let busy = busy.clone();
                 let lines = lines.clone();
@@ -821,6 +847,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         ui.on_install_dismissed(move || {
             if let Some(ui) = weak.upgrade() {
                 ui.set_install_version("".into());
+                ui.set_install_configuring(false);
                 ui.set_install_log("".into());
                 ui.set_install_summary("".into());
                 ui.set_install_failed(false);

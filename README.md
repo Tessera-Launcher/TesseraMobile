@@ -251,10 +251,16 @@ aria2c、JRE、运行库（含 MobileGlues）三项都装好后，下载页从�
 
 ## 版本安装
 
-点版本列表里的一行，不是弹窗，而是整页切到「安装」：
+点版本列表里的一行，先整页切到「附加内容」，选 `无` 或
+`Fabric Loader & API`，再按「安装」进入下载页：
 
 - MDT 只解析元数据，并把完整的 `aria2c --input-file` 清单写到
   `/sdcard/Tessera/缓存/<id>.txt`；它和桌面版交给 aria2 的是同一种文件。
+- 选 Fabric 时：
+  - 从 `meta.fabricmc.net` 取最新稳定 Loader 版本，调用 MDT 的
+    `plan_loader`，版本目录形如 `26.3-fabric-0.20.1`；
+  - Fabric API 先查 `maven.fabricmc.net`，拿不到捆绑 jar 再回落 Modrinth；
+  - API jar 写进 `versions/<id>/mods/`；API 解析失败只记日志，不放弃 Loader。
 - aria2c 的参数照桌面版抄：`-j16 -x1 -s1`、`--console-log-level=notice`、
   `--show-console-readout=false`、`--summary-interval=0`、`--max-tries=3`、
   `--stop-with-process`，Android 额外传 `--ca-certificate`。
@@ -266,9 +272,12 @@ aria2c、JRE、运行库（含 MobileGlues）三项都装好后，下载页从�
 - 游戏目录仍是 `/sdcard/Tessera/游戏`，布局和桌面版一致：
   `versions/`、`libraries/`、`assets/`。
 
-真机验证安装过 `26.3`（过滤 LWJGL 前）：5203 个文件、574.3 MB 清单，校验通过，
-游戏目录约 586 MB。过滤后主机侧生成同一版本的清单是 5194 个文件，没有
-`org/lwjgl` 或 native jar；Android 的规则还会再排除只给 Linux 的 jtracy 原生包。
+真机验证：
+- `26.3`：过滤 LWJGL 前 5203 个文件、574.3 MB 清单，校验通过。
+- `26.3-fabric-0.20.1`：5200 个文件，Fabric API `0.166.2+26.3` 已写入
+  `mods/`，校验通过，用时 3 分 46 秒、平均 2.5 MB/s。
+- 过滤后主机侧生成同一版本的清单是 5194 个文件，没有 `org/lwjgl` 或 native
+  jar；Android 的规则还会再排除只给 Linux 的 jtracy 原生包。
 
 ## 设置
 
