@@ -15,6 +15,7 @@ export struct InstalledRow {
 
 component InstalledRowView inherits Rectangle {
     in property <InstalledRow> item;
+    callback uninstall(string);
 
     height: 54px;
     background: touch.pressed ? Theme.pressed : transparent;
@@ -45,6 +46,19 @@ component InstalledRowView inherits Rectangle {
     }
 
     touch := TouchArea { }
+
+    // Long press on Android (right click on desktop) opens this menu. The
+    // ContextMenuArea expands to the whole row.
+    ContextMenuArea {
+        Menu {
+            MenuItem {
+                title: "卸载";
+                activated => {
+                    root.uninstall(root.item.key);
+                }
+            }
+        }
+    }
 }
 
 export component HomePage inherits Page {
@@ -54,6 +68,7 @@ export component HomePage inherits Page {
     in property <int> installed-count: 0;
 
     callback accounts-requested;
+    callback uninstall-version(string);
 
     HeaderButton {
         // Right-aligned on the title's baseline: the title sits at
@@ -95,6 +110,9 @@ export component HomePage inherits Page {
 
             for row in root.installed : InstalledRowView {
                 item: row;
+                uninstall(key) => {
+                    root.uninstall-version(key);
+                }
             }
         }
     }

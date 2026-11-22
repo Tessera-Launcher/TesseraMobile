@@ -118,7 +118,9 @@ ZTE 7552N / Android 13 / 480×854：
 - 只列含可读版本 JSON 的目录；id、渠道（正式版 / 快照 / 旧版）和 `releaseTime`
   的日期从 JSON 读，按 `releaseTime` 新到旧排列。
 - 安装完成后会重新扫描并刷新计数；切回主页也会刷新。
-- 目前是只读列表，点行启动还没有接。扫描逻辑在 `src/installed.rs`。
+- 长按一行会弹出菜单，目前只有「卸载」：删除 `versions/<目录>` 和对应的
+  `缓存/<id>.txt`；共享的 `libraries/`、`assets/` 不删，可能还有别的版本在用。
+- 点行启动还没有接。扫描逻辑在 `src/installed.rs`。
 
 ## 账户
 

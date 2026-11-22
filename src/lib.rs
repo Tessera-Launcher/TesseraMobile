@@ -105,6 +105,36 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     }
 
+    // Long-press menu on a home row: remove that version directory. Shared
+    // libraries and assets stay; they may belong to other installed versions.
+    {
+        let weak = ui.as_weak();
+        ui.on_uninstall_version(move |dir| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let dir = dir.to_string();
+            if dir.is_empty()
+                || dir == "."
+                || dir == ".."
+                || dir.contains('/')
+                || dir.contains('\\')
+            {
+                return;
+            }
+            let game = install::game_root();
+            let path = game.join("versions").join(&dir);
+            if std::fs::remove_dir_all(&path).is_ok() {
+                let _ = std::fs::remove_file(
+                    crate::platform::data_dir()
+                        .join("缓存")
+                        .join(format!("{dir}.txt")),
+                );
+                publish_installed(&ui);
+            }
+        });
+    }
+
     // The 账户 button on the home page: re-read the directory, then push the
     // screen. Files can change while the screen is closed.
     {
@@ -1237,7 +1267,7 @@ fn publish_installed(ui: &AppWindow) {
         .map(|item| InstalledRow {
             label: item.id.clone().into(),
             detail: item.detail().into(),
-            key: item.id.into(),
+            key: item.dir.into(),
         })
         .collect();
     let count = rows.len() as i32;

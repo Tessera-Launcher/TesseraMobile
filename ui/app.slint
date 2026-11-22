@@ -103,6 +103,7 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-status-error: false;
 
     callback accounts-requested;
+    callback uninstall-version(string);
     callback accounts-closed;
     callback account-activated(int);
     callback account-remove(int);
@@ -153,6 +154,9 @@ export component AppWindow inherits Window {
                 installed-count: root.installed-count;
                 accounts-requested => {
                     root.accounts-requested();
+                }
+                uninstall-version(key) => {
+                    root.uninstall-version(key);
                 }
             }
             if root.tab == Tab.download : DownloadPage {

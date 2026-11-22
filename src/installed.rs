@@ -11,6 +11,8 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct Installed {
     pub id: String,
+    /// Directory name under `versions/`; what uninstall removes.
+    pub dir: String,
     pub kind: String,
     pub date: String,
 }
@@ -74,6 +76,7 @@ pub fn scan(game: &Path) -> Vec<Installed> {
             sort,
             Installed {
                 id,
+                dir: dir_name.to_string(),
                 kind,
                 date,
             },
