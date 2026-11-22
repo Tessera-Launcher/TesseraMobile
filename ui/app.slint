@@ -7,7 +7,7 @@
 import { Theme } from "theme.slint";
 import { BottomBar, Tab } from "navbar.slint";
 import { HomePage } from "home.slint";
-import { DownloadPage, VersionRow } from "download.slint";
+import { DownloadPage, VersionFilter, VersionRow } from "download.slint";
 import { SettingsPage } from "settings.slint";
 import { AccountsPage, AccountRow } from "accounts_page.slint";
 import { LoginPage, IdentityRow, LoginPhase } from "login_page.slint";
@@ -82,6 +82,9 @@ export component AppWindow inherits Window {
     in-out property <[VersionRow]> versions;
     in-out property <bool> versions-loading: false;
     in-out property <string> versions-error: "";
+    in-out property <string> version-query: "";
+    in-out property <VersionFilter> version-filter: VersionFilter.all;
+    in-out property <int> version-count: 0;
 
     /// Settings: the one desktop setting the phone front-end owns today.
     in-out property <string> github-proxy: "";
@@ -105,6 +108,8 @@ export component AppWindow inherits Window {
     callback jre-install-requested;
     callback runtime-install-requested;
     callback versions-refresh;
+    callback versions-refilter(VersionFilter, string);
+    callback version-group-toggled(string);
     callback github-proxy-saved(string);
 
     // The download page never reads the disk itself: entering the tab is the
@@ -147,6 +152,9 @@ export component AppWindow inherits Window {
                 versions: root.versions;
                 versions-loading: root.versions-loading;
                 versions-error: root.versions-error;
+                version-query <=> root.version-query;
+                version-filter <=> root.version-filter;
+                version-count: root.version-count;
                 install-requested => {
                     root.aria2-install-requested();
                 }
@@ -158,6 +166,12 @@ export component AppWindow inherits Window {
                 }
                 refresh-versions => {
                     root.versions-refresh();
+                }
+                versions-refilter(filter, query) => {
+                    root.versions-refilter(filter, query);
+                }
+                version-group-toggled(key) => {
+                    root.version-group-toggled(key);
                 }
             }
             if root.tab == Tab.settings : SettingsPage {

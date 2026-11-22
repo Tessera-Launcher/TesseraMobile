@@ -13,6 +13,7 @@ use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
@@ -31,6 +32,7 @@ pub mod settings;
 pub mod platform;
 pub mod runtime;
 pub mod state;
+pub mod version_tree;
 pub mod versions;
 
 slint::include_modules!();
@@ -79,6 +81,12 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     let runtime_busy = Arc::new(AtomicBool::new(false));
     let versions_loading = Arc::new(AtomicBool::new(false));
     let versions_loaded = Arc::new(AtomicBool::new(false));
+    let picker = Arc::new(Mutex::new(versions::Picker::default()));
+    {
+        let initial = versions::Filter::from_key(&config.borrow().download_filter);
+        picker.lock().unwrap().set_filter(initial);
+        ui.set_version_filter(slint_filter(initial));
+    }
 
     // The 账户 button on the home page: re-read the directory, then push the
     // screen. Files can change while the screen is closed.
@@ -330,6 +338,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         let weak = ui.as_weak();
         let versions_loading = versions_loading.clone();
         let versions_loaded = versions_loaded.clone();
+        let picker = picker.clone();
         ui.on_download_opened(move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -357,7 +366,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                 ui.set_runtime_message("".into());
             }
             ui.set_runtime_installed(runtime_now);
-            load_versions(&ui, &versions_loading, &versions_loaded, false);
+            load_versions(&ui, &versions_loading, &versions_loaded, &picker, false);
         });
     }
 
@@ -369,6 +378,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         let busy = aria2_busy.clone();
         let versions_loading = versions_loading.clone();
         let versions_loaded = versions_loaded.clone();
+        let picker = picker.clone();
         ui.on_aria2_install_requested(move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -390,11 +400,13 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let busy = busy.clone();
             let versions_loading = versions_loading.clone();
             let versions_loaded = versions_loaded.clone();
+            let picker = picker.clone();
             aria2::spawn_install(proxy, move |event| {
                 let weak = weak.clone();
                 let busy = busy.clone();
                 let versions_loading = versions_loading.clone();
                 let versions_loaded = versions_loaded.clone();
+                let picker = picker.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = weak.upgrade() else {
                         return;
@@ -438,7 +450,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_aria2_message(
                                 format!("aria2c {version} 已安装 · {source}").into(),
                             );
-                            load_versions(&ui, &versions_loading, &versions_loaded, false);
+                            load_versions(&ui, &versions_loading, &versions_loaded, &picker, false);
                         }
                         aria2::Event::Failed(problem) => {
                             busy.store(false, Ordering::SeqCst);
@@ -460,6 +472,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         let busy = jre_busy.clone();
         let versions_loading = versions_loading.clone();
         let versions_loaded = versions_loaded.clone();
+        let picker = picker.clone();
         ui.on_jre_install_requested(move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -486,11 +499,13 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let busy = busy.clone();
             let versions_loading = versions_loading.clone();
             let versions_loaded = versions_loaded.clone();
+            let picker = picker.clone();
             jre::spawn_install(proxy, move |event| {
                 let weak = weak.clone();
                 let busy = busy.clone();
                 let versions_loading = versions_loading.clone();
                 let versions_loaded = versions_loaded.clone();
+                let picker = picker.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = weak.upgrade() else {
                         return;
@@ -534,7 +549,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_jre_message(
                                 format!("JRE {id} 已安装 · {source}").into(),
                             );
-                            load_versions(&ui, &versions_loading, &versions_loaded, false);
+                            load_versions(&ui, &versions_loading, &versions_loaded, &picker, false);
                         }
                         jre::Event::Failed(problem) => {
                             busy.store(false, Ordering::SeqCst);
@@ -556,6 +571,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         let busy = runtime_busy.clone();
         let versions_loading = versions_loading.clone();
         let versions_loaded = versions_loaded.clone();
+        let picker = picker.clone();
         ui.on_runtime_install_requested(move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -582,11 +598,13 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let busy = busy.clone();
             let versions_loading = versions_loading.clone();
             let versions_loaded = versions_loaded.clone();
+            let picker = picker.clone();
             runtime::spawn_install(proxy, move |event| {
                 let weak = weak.clone();
                 let busy = busy.clone();
                 let versions_loading = versions_loading.clone();
                 let versions_loaded = versions_loaded.clone();
+                let picker = picker.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = weak.upgrade() else {
                         return;
@@ -628,7 +646,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_runtime_installed(true);
                             ui.set_runtime_progress(1.0);
                             ui.set_runtime_message("MobileGlues 渲染器已安装".into());
-                            load_versions(&ui, &versions_loading, &versions_loaded, false);
+                            load_versions(&ui, &versions_loading, &versions_loaded, &picker, false);
                         }
                         runtime::Event::Failed(problem) => {
                             busy.store(false, Ordering::SeqCst);
@@ -648,10 +666,59 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         let weak = ui.as_weak();
         let versions_loading = versions_loading.clone();
         let versions_loaded = versions_loaded.clone();
+        let picker = picker.clone();
         ui.on_versions_refresh(move || {
             if let Some(ui) = weak.upgrade() {
-                load_versions(&ui, &versions_loading, &versions_loaded, true);
+                load_versions(&ui, &versions_loading, &versions_loaded, &picker, true);
             }
+        });
+    }
+
+    // Search and kind filter. The picker owns the filtered indices and the
+    // folded rows; this just republishes the model.
+    {
+        let weak = ui.as_weak();
+        let picker = picker.clone();
+        let config = config.clone();
+        let state = state.clone();
+        ui.on_versions_refilter(move |filter, query| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let filter = match filter {
+                VersionFilter::All => versions::Filter::All,
+                VersionFilter::Release => versions::Filter::Release,
+                VersionFilter::Snapshot => versions::Filter::Snapshot,
+                VersionFilter::Old => versions::Filter::Old,
+            };
+            let mut picker = picker.lock().unwrap();
+            picker.set_filter(filter);
+            picker.set_query(query.to_string());
+            publish_versions(&ui, &picker);
+            drop(picker);
+
+            let key = filter.key().to_string();
+            let mut next = config.borrow().clone();
+            if next.download_filter != key {
+                next.download_filter = key;
+                let root = state.borrow().root().to_path_buf();
+                if next.save(&root).is_ok() {
+                    *config.borrow_mut() = next;
+                }
+            }
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        let picker = picker.clone();
+        ui.on_version_group_toggled(move |key| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let mut picker = picker.lock().unwrap();
+            picker.toggle(&key);
+            publish_versions(&ui, &picker);
         });
     }
 
@@ -758,6 +825,15 @@ fn reload_for(ui: &AppWindow, state: &Rc<RefCell<State>>, rows: &Rc<VecModel<Acc
     refresh(ui, state, rows);
 }
 
+fn slint_filter(filter: versions::Filter) -> VersionFilter {
+    match filter {
+        versions::Filter::All => VersionFilter::All,
+        versions::Filter::Release => VersionFilter::Release,
+        versions::Filter::Snapshot => VersionFilter::Snapshot,
+        versions::Filter::Old => VersionFilter::Old,
+    }
+}
+
 /// Fetch the Minecraft version index once all four pieces are installed.
 ///
 /// Runs from the UI thread (either a tab open, an install completion, or the
@@ -767,6 +843,7 @@ fn load_versions(
     ui: &AppWindow,
     loading: &Arc<AtomicBool>,
     loaded: &Arc<AtomicBool>,
+    picker: &Arc<Mutex<versions::Picker>>,
     force: bool,
 ) {
     if !(ui.get_aria2_installed() && ui.get_jre_installed() && ui.get_runtime_installed()) {
@@ -786,10 +863,12 @@ fn load_versions(
     let weak = ui.as_weak();
     let loading = loading.clone();
     let loaded = loaded.clone();
+    let picker = picker.clone();
     versions::spawn(move |result| {
         let weak = weak.clone();
         let loading = loading.clone();
         let loaded = loaded.clone();
+        let picker = picker.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -799,15 +878,9 @@ fn load_versions(
             match result {
                 Ok(rows) => {
                     loaded.store(true, Ordering::SeqCst);
-                    let built: Vec<VersionRow> = rows
-                        .into_iter()
-                        .map(|version| VersionRow {
-                            id: version.id.into(),
-                            kind: version.kind.into(),
-                            date: version.date.into(),
-                        })
-                        .collect();
-                    ui.set_versions(ModelRc::from(Rc::new(VecModel::from_slice(&built))));
+                    let mut picker = picker.lock().unwrap();
+                    picker.set_versions(rows);
+                    publish_versions(&ui, &picker);
                 }
                 Err(problem) => {
                     ui.set_versions_error(problem.into());
@@ -815,6 +888,50 @@ fn load_versions(
             }
         });
     });
+}
+
+/// Turn the picker's folded rows into the Slint model.
+fn publish_versions(ui: &AppWindow, picker: &versions::Picker) {
+    let mut built: Vec<VersionRow> = Vec::with_capacity(picker.rows().len());
+    for row in picker.rows() {
+        match &row.kind {
+            version_tree::RowKind::Version(index) => {
+                if let Some(version) = picker.version(*index) {
+                    built.push(VersionRow {
+                        label: version.id.clone().into(),
+                        detail: format!(
+                            "{} · {}",
+                            versions::kind_label(version.kind),
+                            version.date
+                        )
+                        .into(),
+                        group: false,
+                        expanded: false,
+                        depth: row.depth as i32,
+                        key: "".into(),
+                    });
+                }
+            }
+            version_tree::RowKind::Group {
+                key,
+                first,
+                last,
+                expanded,
+            } => {
+                let label = version_tree::title(&picker.all, picker.visible(), *first, *last);
+                built.push(VersionRow {
+                    label: label.into(),
+                    detail: format!("{} 个版本", last - first + 1).into(),
+                    group: true,
+                    expanded: *expanded,
+                    depth: row.depth as i32,
+                    key: key.clone().into(),
+                });
+            }
+        }
+    }
+    ui.set_version_count(picker.count() as i32);
+    ui.set_versions(ModelRc::from(Rc::new(VecModel::from_slice(&built))));
 }
 
 /// Rebuild the row model from the state that is already in memory.

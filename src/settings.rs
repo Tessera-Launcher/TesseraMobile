@@ -14,13 +14,25 @@ pub const FILE: &str = "配置.toml";
 pub const CURRENT_VERSION: u32 = 1;
 
 const PROXY: &str = "github_proxy";
+const DOWNLOAD_FILTER: &str = "download_filter";
 
 /// What the phone front-end reads and writes today.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     /// `gh-proxy.com`-style base prefixed to every GitHub download URL; empty
     /// for none.
     pub github_proxy: String,
+    /// `all` / `release` / `snapshot` / `old`, matching the desktop build's key.
+    pub download_filter: String,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            github_proxy: String::new(),
+            download_filter: "all".to_string(),
+        }
+    }
 }
 
 impl Settings {
@@ -75,7 +87,19 @@ impl Settings {
             .unwrap_or("")
             .trim()
             .to_string();
-        (Self { github_proxy }, None)
+        let download_filter = table
+            .get(DOWNLOAD_FILTER)
+            .and_then(|value| value.as_str())
+            .filter(|value| matches!(*value, "all" | "release" | "snapshot" | "old"))
+            .unwrap_or("all")
+            .to_string();
+        (
+            Self {
+                github_proxy,
+                download_filter,
+            },
+            None,
+        )
     }
 
     /// Write the proxy back, preserving every other key in the file.
@@ -99,6 +123,10 @@ impl Settings {
         table.insert(
             PROXY.to_string(),
             toml::Value::String(self.github_proxy.clone()),
+        );
+        table.insert(
+            DOWNLOAD_FILTER.to_string(),
+            toml::Value::String(self.download_filter.clone()),
         );
         let body = toml::to_string_pretty(&table)
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
@@ -138,6 +166,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let settings = Settings {
             github_proxy: "gh-proxy.com".into(),
+            download_filter: "release".into(),
         };
         settings.save(tmp.path()).unwrap();
         assert_eq!(Settings::load(tmp.path()).0, settings);
@@ -154,6 +183,7 @@ mod tests {
 
         Settings {
             github_proxy: "https://gh-proxy.com".into(),
+            download_filter: "snapshot".into(),
         }
         .save(tmp.path())
         .unwrap();
@@ -164,6 +194,7 @@ mod tests {
             .unwrap();
         assert_eq!(table["memory_mb"].as_integer(), Some(4096));
         assert_eq!(table[PROXY].as_str(), Some("https://gh-proxy.com"));
+        assert_eq!(table[DOWNLOAD_FILTER].as_str(), Some("snapshot"));
     }
 
     #[test]

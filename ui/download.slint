@@ -104,32 +104,85 @@ component DependencyCard inherits Rectangle {
     }
 }
 
+export enum VersionFilter {
+    all,
+    release,
+    snapshot,
+    old,
+}
+
 export struct VersionRow {
-    id: string,
-    kind: string,
-    date: string,
+    label: string,
+    detail: string,
+    group: bool,
+    expanded: bool,
+    depth: int,
+    key: string,
+}
+
+component FilterChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback clicked;
+
+    width: 64px;
+    height: 28px;
+    border-radius: 14px;
+    background: root.selected ? Theme.accent : Theme.bar;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent : Theme.line;
+
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.label;
+        font-size: 12px;
+        color: root.selected ? #ffffff : Theme.text;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 }
 
 component VersionRowView inherits Rectangle {
     in property <VersionRow> version;
+    callback group-toggled(string);
 
     height: 54px;
     background: touch.pressed ? Theme.pressed : transparent;
 
+    if root.version.group : Path {
+        x: 12px + root.version.depth * 16px;
+        y: 12px;
+        width: 10px;
+        height: 10px;
+        fill: transparent;
+        stroke: Theme.dim;
+        stroke-width: 1.7px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: root.version.expanded ? "M1 1 L6 6 L11 1" : "M1 1 L6 6 L1 11";
+    }
+
     Text {
-        x: 0px;
+        x: 12px + root.version.depth * 16px + (root.version.group ? 15px : 0px);
         y: 7px;
-        width: 100%;
-        text: root.version.id;
+        width: root.width - 40px;
+        text: root.version.label;
         font-size: 15px;
         color: Theme.text;
     }
 
     Text {
-        x: 0px;
+        x: 12px + root.version.depth * 16px + (root.version.group ? 15px : 0px);
         y: 29px;
-        width: 100%;
-        text: root.version.kind + " · " + root.version.date;
+        width: root.width - 40px;
+        text: root.version.detail;
         font-size: 11px;
         color: Theme.dim;
     }
@@ -141,7 +194,13 @@ component VersionRowView inherits Rectangle {
         background: Theme.line;
     }
 
-    touch := TouchArea { }
+    touch := TouchArea {
+        clicked => {
+            if (root.version.group) {
+                root.group-toggled(root.version.key);
+            }
+        }
+    }
 }
 
 export component DownloadPage inherits Page {
@@ -162,6 +221,9 @@ export component DownloadPage inherits Page {
     in property <float> runtime-progress: 0;
     in property <string> runtime-message: "";
 
+    in-out property <string> version-query: "";
+    in-out property <VersionFilter> version-filter: VersionFilter.all;
+    in property <int> version-count: 0;
     in property <[VersionRow]> versions;
     in property <bool> versions-loading: false;
     in property <string> versions-error: "";
@@ -170,8 +232,17 @@ export component DownloadPage inherits Page {
     callback jre-install-requested;
     callback runtime-install-requested;
     callback refresh-versions;
+    callback versions-refilter(VersionFilter, string);
+    callback version-group-toggled(string);
 
     property <bool> ready: root.aria2-installed && root.jre-installed && root.runtime-installed;
+
+    changed version-query => {
+        root.versions-refilter(root.version-filter, root.version-query);
+    }
+    changed version-filter => {
+        root.versions-refilter(root.version-filter, root.version-query);
+    }
 
     // Only the full dependency set unlocks the index.
     if root.ready : VerticalLayout {
@@ -179,16 +250,16 @@ export component DownloadPage inherits Page {
         y: root.top-inset + 64px;
         width: root.width - Theme.gutter * 2;
         height: root.height - (root.top-inset + 64px) - 8px;
-        spacing: 0px;
+        spacing: 6px;
 
         Rectangle {
-            height: 38px;
+            height: 32px;
             background: transparent;
 
             Text {
                 x: 0px;
-                y: 8px;
-                text: "版本列表 · " + root.versions.length + " 个";
+                y: 5px;
+                text: "版本列表 · " + root.version-count + " 个";
                 font-size: 15px;
                 font-weight: 600;
                 color: Theme.text;
@@ -196,7 +267,7 @@ export component DownloadPage inherits Page {
 
             HeaderButton {
                 x: parent.width - self.width;
-                y: 4px;
+                y: 1px;
                 label: "刷新";
                 clicked => {
                     root.refresh-versions();
@@ -204,9 +275,70 @@ export component DownloadPage inherits Page {
             }
         }
 
+        Rectangle {
+            height: 36px;
+            border-radius: 10px;
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: search.has-focus ? Theme.accent : Theme.line;
+
+            search := TextInput {
+                x: 12px;
+                y: 8px;
+                width: root.width - Theme.gutter * 2 - 24px;
+                height: 20px;
+                text <=> root.version-query;
+                font-size: 13px;
+                color: Theme.text;
+                single-line: true;
+            }
+
+            if root.version-query == "" : Text {
+                x: 12px;
+                y: 8px;
+                text: "搜索版本 id，例如 1.21 / snapshot";
+                font-size: 13px;
+                color: Theme.dim;
+            }
+        }
+
+        HorizontalLayout {
+            height: 28px;
+            spacing: 6px;
+
+            FilterChip {
+                label: "全部";
+                selected: root.version-filter == VersionFilter.all;
+                clicked => {
+                    root.version-filter = VersionFilter.all;
+                }
+            }
+            FilterChip {
+                label: "正式版";
+                selected: root.version-filter == VersionFilter.release;
+                clicked => {
+                    root.version-filter = VersionFilter.release;
+                }
+            }
+            FilterChip {
+                label: "快照";
+                selected: root.version-filter == VersionFilter.snapshot;
+                clicked => {
+                    root.version-filter = VersionFilter.snapshot;
+                }
+            }
+            FilterChip {
+                label: "旧版";
+                selected: root.version-filter == VersionFilter.old;
+                clicked => {
+                    root.version-filter = VersionFilter.old;
+                }
+            }
+        }
+
         if root.runtime-message != "" || root.jre-message != "" || root.aria2-message != "" : Text {
             width: 100%;
-            height: 20px;
+            height: 18px;
             text: root.runtime-message != ""
                 ? root.runtime-message
                 : (root.jre-message != "" ? root.jre-message : root.aria2-message);
@@ -232,11 +364,23 @@ export component DownloadPage inherits Page {
             wrap: word-wrap;
         }
 
-        if !root.versions-loading && root.versions-error == "" : ListView {
+        if !root.versions-loading && root.versions-error == "" && root.versions.length == 0 : Text {
+            width: 100%;
+            height: 40px;
+            text: "没有匹配的版本";
+            font-size: 13px;
+            color: Theme.dim;
+            vertical-alignment: center;
+        }
+
+        if !root.versions-loading && root.versions-error == "" && root.versions.length > 0 : ListView {
             vertical-stretch: 1;
 
             for row in root.versions : VersionRowView {
                 version: row;
+                group-toggled(key) => {
+                    root.version-group-toggled(key);
+                }
             }
         }
     }
