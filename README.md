@@ -288,6 +288,28 @@ aria2c、JRE、运行库（含 MobileGlues）三项都装好后，下载页从�
 GitHub Proxy，和桌面版同一个文件、同一个键。页面底部注明 Android 运行库借用自
 Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 
+## 启动（实验）
+
+主页点一行会进入全屏启动日志，JVM 用 JvmTest 的路线在当前进程里启动：
+
+- 绝对路径预加载 `libc++_shared.so` / JRE 库 / `libjvm.so`；
+- `JNI_CreateJavaVM` 在新线程上创建 VM；
+- classpath 过滤 Mojang 的 LWJGL，换成 FCL 的 3.4.1 jar；
+- 自动补 `java.compiler`（safe JRE 没有）和 FCL `CallbackBridge` 兼容类；
+- 日志写到 `files/game.log`。
+
+真机已经跑到 Fabric 0.20.1 + Minecraft 26.3 的初始化阶段，当前卡在 SDL：
+
+```
+Unable to initialize SDL: Application didn't initialize properly,
+did you include SDL_main.h in the file containing your main() function?
+```
+
+这不是 JVM/启动参数的问题，而是还没有 FCL 的 `SDLActivity`/`SDLSurface` 承载层。下一步要把
+`java.compiler.jar`、`fcl-callbackbridge.jar`、`libpojavexec.so`、`libfcl.so`、
+`libandroidnsbypass.so`、`libbytehook.so`、`libspirv-cross.so` 固化进运行库包，
+并把 SDL Surface 接到游戏 Activity。
+
 ## 下一步
 
 - 主页点版本启动；启动时也要对 classpath 和 `mods/` 再跑一遍 `jar::normalize`，

@@ -16,6 +16,7 @@ export struct InstalledRow {
 component InstalledRowView inherits Rectangle {
     in property <InstalledRow> item;
     callback uninstall(string);
+    callback launch(string);
 
     height: 54px;
     background: touch.pressed ? Theme.pressed : transparent;
@@ -45,10 +46,9 @@ component InstalledRowView inherits Rectangle {
         background: Theme.line;
     }
 
-    touch := TouchArea { }
-
     // Long press on Android (right click on desktop) opens this menu. The
-    // ContextMenuArea expands to the whole row.
+    // ContextMenuArea expands to the whole row. The TouchArea is a visual child
+    // so a short tap still reaches the launch callback.
     ContextMenuArea {
         Menu {
             MenuItem {
@@ -56,6 +56,12 @@ component InstalledRowView inherits Rectangle {
                 activated => {
                     root.uninstall(root.item.key);
                 }
+            }
+        }
+
+        touch := TouchArea {
+            clicked => {
+                root.launch(root.item.key);
             }
         }
     }
@@ -67,8 +73,17 @@ export component HomePage inherits Page {
     in property <[InstalledRow]> installed;
     in property <int> installed-count: 0;
 
+    // Launch state: a full-screen log, not a dialog.
+    in property <string> launch-version: "";
+    in property <bool> launch-busy: false;
+    in property <string> launch-log: "";
+    in property <string> launch-summary: "";
+    in property <bool> launch-failed: false;
+
     callback accounts-requested;
     callback uninstall-version(string);
+    callback launch-requested(string);
+    callback launch-dismissed;
 
     HeaderButton {
         // Right-aligned on the title's baseline: the title sits at
@@ -81,7 +96,7 @@ export component HomePage inherits Page {
         }
     }
 
-    VerticalLayout {
+    if root.launch-version == "" : VerticalLayout {
         x: Theme.gutter;
         y: root.top-inset + 64px;
         width: root.width - Theme.gutter * 2;
@@ -112,6 +127,94 @@ export component HomePage inherits Page {
                 item: row;
                 uninstall(key) => {
                     root.uninstall-version(key);
+                }
+                launch(key) => {
+                    root.launch-requested(key);
+                }
+            }
+        }
+    }
+
+    if root.launch-version != "" : Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: Theme.bg;
+
+        VerticalLayout {
+            x: Theme.gutter;
+            y: root.top-inset + 18px;
+            width: root.width - Theme.gutter * 2;
+            height: root.height - (root.top-inset + 18px) - 8px;
+            spacing: 10px;
+
+            Rectangle {
+                height: 42px;
+                background: transparent;
+
+                Text {
+                    x: 0px;
+                    y: 7px;
+                    text: root.launch-busy ? "启动 " + root.launch-version : "启动 " + root.launch-version;
+                    font-size: 22px;
+                    font-weight: 600;
+                    color: Theme.text;
+                }
+
+                if !root.launch-busy : HeaderButton {
+                    x: parent.width - self.width;
+                    y: 6px;
+                    label: "返回";
+                    clicked => {
+                        root.launch-dismissed();
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                border-radius: 12px;
+                background: Theme.bar;
+                border-width: 1px;
+                border-color: Theme.line;
+
+                Text {
+                    x: 14px;
+                    y: 10px;
+                    text: "活动";
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: Theme.dim;
+                }
+
+                Text {
+                    x: 12px;
+                    y: 32px;
+                    width: parent.width - 24px;
+                    height: parent.height - 42px;
+                    text: root.launch-log;
+                    font-size: 11px;
+                    color: Theme.dim;
+                    wrap: word-wrap;
+                }
+            }
+
+            Rectangle {
+                height: 44px;
+                background: transparent;
+
+                Text {
+                    x: 0px;
+                    y: 0px;
+                    width: 100%;
+                    height: 100%;
+                    text: root.launch-summary;
+                    font-size: 12px;
+                    color: root.launch-failed
+                        ? Theme.danger
+                        : (root.launch-busy ? Theme.dim : Theme.accent);
+                    wrap: word-wrap;
                 }
             }
         }

@@ -5427,6 +5427,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "jni 0.21.1",
+ "libc",
  "md-5",
  "mdt-minecraft",
  "minecraft-auth",

@@ -53,8 +53,11 @@ webpki-roots = "1"
 [target.'cfg(target_os = "android")'.dependencies]
 # `open_url` and the clipboard: Slint exposes neither, so they go through JNI
 # against the activity `android-activity` already handed the process.
+# `invocation` adds JavaVM::with_libjvm, which is how the rootless JRE's
+# libjvm.so is started without a `bin/java`.
 jni = "0.21"
 ndk-context = "0.1"
+libc = "0.2"
 
 [build-dependencies]
 slint-build = "1.19"

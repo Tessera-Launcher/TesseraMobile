@@ -82,6 +82,11 @@ export component AppWindow inherits Window {
     /// opens and after an install finishes.
     in-out property <[InstalledRow]> installed;
     in-out property <int> installed-count: 0;
+    in-out property <string> launch-version: "";
+    in-out property <bool> launch-busy: false;
+    in-out property <string> launch-log: "";
+    in-out property <string> launch-summary: "";
+    in-out property <bool> launch-failed: false;
 
     /// Minecraft versions, fetched once all dependencies are in place.
     in-out property <[VersionRow]> versions;
@@ -104,6 +109,8 @@ export component AppWindow inherits Window {
 
     callback accounts-requested;
     callback uninstall-version(string);
+    callback launch-requested(string);
+    callback launch-dismissed;
     callback accounts-closed;
     callback account-activated(int);
     callback account-remove(int);
@@ -152,11 +159,22 @@ export component AppWindow inherits Window {
                 top-inset: root.safe-area-insets.top;
                 installed: root.installed;
                 installed-count: root.installed-count;
+                launch-version: root.launch-version;
+                launch-busy: root.launch-busy;
+                launch-log: root.launch-log;
+                launch-summary: root.launch-summary;
+                launch-failed: root.launch-failed;
                 accounts-requested => {
                     root.accounts-requested();
                 }
                 uninstall-version(key) => {
                     root.uninstall-version(key);
+                }
+                launch-requested(key) => {
+                    root.launch-requested(key);
+                }
+                launch-dismissed => {
+                    root.launch-dismissed();
                 }
             }
             if root.tab == Tab.download : DownloadPage {

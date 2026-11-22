@@ -32,6 +32,7 @@ pub mod install;
 pub mod jar;
 pub mod installed;
 pub mod jre;
+pub mod launch;
 pub mod login;
 pub mod platform;
 pub mod runtime;
@@ -89,6 +90,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     let versions_loaded = Arc::new(AtomicBool::new(false));
     let picker = Arc::new(Mutex::new(versions::Picker::default()));
     let install_busy = Arc::new(AtomicBool::new(false));
+    let launch_busy = Arc::new(AtomicBool::new(false));
     {
         let initial = versions::Filter::from_key(&config.borrow().download_filter);
         picker.lock().unwrap().set_filter(initial);
@@ -766,6 +768,82 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     }
 
+    // Tapping an installed row starts it. The JVM lives in this process, so a
+    // launch screen is just a log tail until main returns.
+    {
+        let weak = ui.as_weak();
+        let busy = launch_busy.clone();
+        let state = state.clone();
+        let lines = Arc::new(Mutex::new(VecDeque::<String>::new()));
+        ui.on_launch_requested(move |dir| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if busy.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let dir = dir.to_string();
+            let active = state.borrow().active.clone();
+            lines.lock().unwrap().clear();
+            ui.set_launch_version(dir.clone().into());
+            ui.set_launch_busy(true);
+            ui.set_launch_log("".into());
+            ui.set_launch_summary("准备启动…".into());
+            ui.set_launch_failed(false);
+
+            let weak = ui.as_weak();
+            let busy = busy.clone();
+            let lines = lines.clone();
+            launch::spawn(dir, active, move |event| {
+                let weak = weak.clone();
+                let busy = busy.clone();
+                let lines = lines.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = weak.upgrade() else {
+                        return;
+                    };
+                    match event {
+                        launch::Event::Log(line) => {
+                            append_launch_log(&ui, &lines, line);
+                        }
+                        launch::Event::Started { pid } => {
+                            ui.set_launch_summary(format!("游戏已启动（pid {pid}）").into());
+                        }
+                        launch::Event::Exited { code } => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_launch_busy(false);
+                            let text = match code {
+                                Some(code) => format!("游戏已退出（退出码 {code}）"),
+                                None => "游戏已退出".to_string(),
+                            };
+                            append_launch_log(&ui, &lines, text.clone());
+                            ui.set_launch_summary(format!("{text}；重启应用后才能再次启动").into());
+                        }
+                        launch::Event::Failed(problem) => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_launch_busy(false);
+                            ui.set_launch_failed(true);
+                            append_launch_log(&ui, &lines, format!("启动失败：{problem}"));
+                            ui.set_launch_summary(problem.into());
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        ui.on_launch_dismissed(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_launch_version("".into());
+                ui.set_launch_log("".into());
+                ui.set_launch_summary("".into());
+                ui.set_launch_failed(false);
+            }
+        });
+    }
+
     // Installing a version: tap a row, choose optional content, then start.
     // The configuration and the activity log are two full-screen states of the
     // download tab, not popups.
@@ -1274,6 +1352,21 @@ fn publish_installed(ui: &AppWindow) {
     let count = rows.len() as i32;
     ui.set_installed(ModelRc::from(Rc::new(VecModel::from(rows))));
     ui.set_installed_count(count);
+}
+
+/// Launch screen's activity tail; same shape as the install log.
+fn append_launch_log(
+    ui: &AppWindow,
+    lines: &Arc<Mutex<VecDeque<String>>>,
+    line: impl Into<String>,
+) {
+    let mut lines = lines.lock().unwrap();
+    lines.push_back(line.into());
+    while lines.len() > 12 {
+        lines.pop_front();
+    }
+    let text = lines.iter().cloned().collect::<Vec<_>>().join("\n");
+    ui.set_launch_log(text.into());
 }
 
 /// Keep the install screen's activity tail short enough to fit its box; the
