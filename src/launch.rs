@@ -394,8 +394,9 @@ fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Re
         &features,
         &variables,
     );
-    // Tessera Mobile is Vulkan-only. The client jar is patched at install
-    // time so RenderPearl never falls back to its OpenGL backend.
+    // Tessera Mobile is Vulkan-only. The client jar must be patched with
+    // scripts/patch-vulkan-only.sh (or -compat.sh plus the no-fallback edits);
+    // this flag only sets the preferred backend.
     if !game_args.iter().any(|arg| arg == "--graphicsBackend") {
         game_args.push("--graphicsBackend".to_string());
         game_args.push("vulkan".to_string());
