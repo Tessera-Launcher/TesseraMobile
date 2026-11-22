@@ -310,9 +310,11 @@ FCL 的 `libpojavexec`/`libfcl`/`libbytehook`/`libandroidnsbypass` 与 SDL 二�
 - SDL3 的 `nativeSetupJNI()`、`surfaceCreated()`、`surfaceChanged()`；
 - SDL 初始化不再报 `did you include SDL_main.h`；
 - Fabric 0.20.1 + Minecraft 26.3 进入 Render thread；
-- 最新一次启动已越过 SDL 初始化，进入 Render thread 并创建图形后端；
-- 当前是黑屏、进程存活但没有画面，下一步排查 SDL 的 swap / TextureView
-  Surface 绑定和 RenderPearl 的首帧。
+- 设置 `SDL_OPENGL_LIBRARY` / `SDL_EGL_LIBRARY` 指向 MobileGlues 后，
+  `glGetError mismatch` 已消失，SDL 创建窗口成功；
+- 当前黑屏原因推进到 Minecraft 26.3 的 shader 编译：
+  `S0015: Outputs declared as arrays may only be indexed by a constant integral expression`，
+  需要继续处理 MobileGlues/SFPEW 的 GLSL 翻译。
 
 ## 下一步
 

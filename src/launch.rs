@@ -382,8 +382,15 @@ fn prepare(
     std::fs::create_dir_all(&mg).ok();
     std::env::set_var("POJAV_RENDERER", "opengles3_mobileglues");
     std::env::set_var("LIBGL_ES", "3");
-    std::env::set_var("LIBGL_EGL", natives.join("libmobileglues.so"));
-    std::env::set_var("POJAVEXEC_EGL", "libmobileglues.so");
+    let mg_gl = natives.join("libmobileglues.so");
+    std::env::set_var("LIBGL_EGL", &mg_gl);
+    std::env::set_var("POJAVEXEC_EGL", &mg_gl);
+    // SDL's EGL loader ignores the path argument for the GL library and uses
+    // SDL_OPENGL_LIBRARY instead. Without this it loads the system libGLESv2,
+    // so SDL_GL_GetProcAddress() and LWJGL's MobileGlues provider return
+    // different glGetError addresses (RenderPearl rejects that).
+    std::env::set_var("SDL_OPENGL_LIBRARY", &mg_gl);
+    std::env::set_var("SDL_EGL_LIBRARY", &mg_gl);
     std::env::set_var("MG_DIR_PATH", &mg);
     std::env::set_var("HOME", platform::private_dir());
     std::env::set_var("TMPDIR", &tmp);
