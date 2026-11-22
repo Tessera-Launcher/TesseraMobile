@@ -94,10 +94,10 @@ impl MdtClient {
 
     /// Resolve a vanilla version and write its download list — nothing is transferred.
     ///
-    /// The metadata is still fetched (the version manifest, the LWJGL 3 `.sha1`
-    /// sidecars, the asset index); the game files themselves are only *listed*, in
-    /// the format `aria2c --input-file` reads, at
-    /// `versions/<id>/<id>.txt`.
+    /// The metadata is still fetched (the version manifest, the asset index); the
+    /// game files themselves are only *listed*, in the format
+    /// `aria2c --input-file` reads, at `versions/<id>/<id>.txt`. LWJGL is left
+    /// out: the launcher supplies the Android runtime pack.
     ///
     /// # Errors
     ///
@@ -105,23 +105,10 @@ impl MdtClient {
     /// [`MdtError::NetworkError`], [`MdtError::JsonParseError`].
     pub async fn plan_vanilla(&self, version: &str) -> Result<crate::plan::DownloadPlan, MdtError> {
         self.reporter.status(&format!("读取 {version} 的版本清单…"));
-        let (mut text, mut version_json) =
+        let (text, version_json) =
             manifest::fetch_version_json(self.downloader.as_ref(), &self.mirror, version).await?;
         let urls = ManifestUrls::try_new(&self.mirror)?;
         let mut entries = Vec::new();
-        let mut extractions = Vec::new();
-
-        // 1.1.8.9 installs on LWJGL 3: the liveries are swapped in the profile and
-        //    the 3.4.3 jars are planned instead of the LWJGL 2 ones.
-        {
-            let mut profile: serde_json::Value = serde_json::from_str(&text)?;
-            let planned = crate::lwjgl3::plan_swap(self.downloader.as_ref(), &mut profile).await?;
-            if !planned.is_empty() {
-                text = serde_json::to_string_pretty(&profile)?;
-                version_json = serde_json::from_str(&text)?;
-                entries.extend(planned);
-            }
-        }
 
         // The version JSON is metadata: the launcher reads it back to build a
         // command line, so it is written even though nothing else is.
@@ -129,21 +116,11 @@ impl MdtClient {
         crate::io::create_dir_all(&vdir).await?;
         crate::io::write(vdir.join(format!("{}.json", version_json.id)), &text).await?;
 
-        // 2. Client jar, libraries and natives.
+        // 2. Client jar and the libraries the runtime pack does not own.
         for task in downloader::build_tasks_from_version_json(&version_json, &self.root) {
             let Ok(path) = task.dest_path.strip_prefix(&self.root) else {
                 continue;
             };
-            if let Some(into) = task
-                .extract_to
-                .as_deref()
-                .and_then(|into| into.strip_prefix(&self.root).ok())
-            {
-                extractions.push(crate::plan::Extraction {
-                    jar: path.to_path_buf(),
-                    into: into.to_path_buf(),
-                });
-            }
             entries.push(crate::plan::PlanEntry {
                 url: task.url,
                 path: path.to_path_buf(),
@@ -169,8 +146,7 @@ impl MdtClient {
         }
 
         crate::plan::apply_mirror_to_entries(&mut entries, &urls, &self.mirror);
-        let plan = crate::plan::DownloadPlan::new(version_json.id.clone(), entries)
-            .with_extractions(extractions);
+        let plan = crate::plan::DownloadPlan::new(version_json.id.clone(), entries);
         let path = plan.write(&self.root, &self.list_dir).await?;
         self.reporter.status(&format!(
             "{} 的下载清单：{} 个文件（{} 个带哈希）→ {}",
@@ -238,22 +214,11 @@ impl MdtClient {
         .await?;
 
         let mut entries = Vec::new();
-        let mut extractions = Vec::new();
         // Vanilla files, placed under the loader's own directory.
         for task in downloader::build_tasks_from_version_json_into(&vanilla, &self.root, &id) {
             let Ok(path) = task.dest_path.strip_prefix(&self.root) else {
                 continue;
             };
-            if let Some(into) = task
-                .extract_to
-                .as_deref()
-                .and_then(|into| into.strip_prefix(&self.root).ok())
-            {
-                extractions.push(crate::plan::Extraction {
-                    jar: path.to_path_buf(),
-                    into: into.to_path_buf(),
-                });
-            }
             entries.push(crate::plan::PlanEntry {
                 url: task.url,
                 path: path.to_path_buf(),
@@ -288,7 +253,7 @@ impl MdtClient {
             &self.mirror,
         )
         .await;
-        let plan = crate::plan::DownloadPlan::new(id, entries).with_extractions(extractions);
+        let plan = crate::plan::DownloadPlan::new(id, entries);
         let path = plan.write(&self.root, &self.list_dir).await?;
         self.reporter.status(&format!(
             "{} 的下载清单：{} 个文件（{} 个带哈希）→ {}",
@@ -536,7 +501,7 @@ mod tests {
             .unwrap();
         let plan = client.plan_vanilla("1.20.1").await.unwrap();
         assert_eq!(plan.id, "1.20.1");
-        // jar + libraries + natives + the 1.20.1 asset index (thousands).
+        // jar + non-LWJGL libraries + the 1.20.1 asset index (thousands).
         assert!(plan.entries.len() > 1000, "{}", plan.entries.len());
         assert!(plan.hashed() > 1000, "{}", plan.hashed());
         let list = plan.path(root.path());

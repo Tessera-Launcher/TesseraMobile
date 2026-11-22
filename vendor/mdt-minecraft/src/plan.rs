@@ -55,19 +55,6 @@ impl PlanEntry {
     }
 }
 
-/// A downloaded archive that is unpacked after the transfer.
-///
-/// The aria2 list cannot express extraction, so the plan carries it out of
-/// band: the installer downloads the jar like any other entry and then unpacks
-/// it into `into`. Only natives use this today.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Extraction {
-    /// The downloaded archive, relative to the game root.
-    pub jar: PathBuf,
-    /// Where the archive's entries go, relative to the game root.
-    pub into: PathBuf,
-}
-
 /// Everything one version needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadPlan {
@@ -75,8 +62,6 @@ pub struct DownloadPlan {
     pub id: String,
     /// The files, in metadata order, without duplicates.
     pub entries: Vec<PlanEntry>,
-    /// Archives to unpack once the entries are on disk.
-    pub extractions: Vec<Extraction>,
 }
 
 impl DownloadPlan {
@@ -94,15 +79,7 @@ impl DownloadPlan {
         DownloadPlan {
             id: id.into(),
             entries,
-            extractions: Vec::new(),
         }
-    }
-
-    /// Attach the archives that have to be unpacked after the download.
-    #[must_use]
-    pub fn with_extractions(mut self, extractions: Vec<Extraction>) -> Self {
-        self.extractions = extractions;
-        self
     }
 
     /// `<list_dir>/<id>.txt` — one file per version, named after its id.
@@ -262,6 +239,15 @@ pub fn entries_from_libraries(profile: &serde_json::Value) -> Vec<PlanEntry> {
         return entries;
     };
     for library in libraries {
+        // The Android runtime pack owns LWJGL; never let a loader profile add
+        // the desktop jars back to the list.
+        if library
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|name| name.starts_with("org.lwjgl") || name.contains(":natives-"))
+        {
+            continue;
+        }
         // `downloads.artifact` first: that is the modern shape and it has the hash.
         if let Some(artifact) = library
             .get("downloads")

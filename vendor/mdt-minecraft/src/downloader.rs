@@ -1,7 +1,7 @@
 //! Game-file download and SHA-1 verification.
 //!
 //! Parses `version.json`, builds concurrent download tasks, verifies every file against its
-//! manifest SHA-1, applies mirror rewriting, filters library rules, and extracts natives.
+//! manifest SHA-1, applies mirror rewriting, and filters library rules.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -27,7 +27,6 @@ pub struct OsRule {
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct LibraryDownloads {
     pub artifact: Option<Artifact>,
-    pub classifiers: Option<HashMap<String, Artifact>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -50,13 +49,6 @@ pub struct Library {
     #[serde(default)]
     pub downloads: LibraryDownloads,
     pub rules: Option<Vec<Rule>>,
-    /// Platform -> native classifier suffix, e.g. `{"linux": "natives-linux"}`.
-    ///
-    /// Pre-1.19 metadata keys this by `osx` rather than `macos`, and some entries
-    /// (Twitch's libraries in 1.8.x) embed a `${arch}` placeholder that must be
-    /// substituted with `32`/`64` before the classifier lookup.
-    #[serde(default)]
-    pub natives: Option<HashMap<String, String>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -101,8 +93,6 @@ pub struct DownloadTask {
     pub dest_path: PathBuf,
     pub sha1: String,
     pub size: u64,
-    /// If set, the downloaded archive is extracted here (used for natives).
-    pub extract_to: Option<PathBuf>,
 }
 
 // ===== 3. rule evaluation =====
@@ -145,7 +135,7 @@ fn evaluate_rules(rules: &Option<Vec<Rule>>) -> bool {
     allowed
 }
 
-/// Build download tasks from a parsed version JSON (client JAR, libraries, natives).
+/// Build download tasks from a parsed version JSON (client JAR and non-LWJGL libraries).
 pub fn build_tasks_from_version_json(
     version_json: &VersionJson,
     root_dir: &Path,
@@ -154,12 +144,11 @@ pub fn build_tasks_from_version_json(
 }
 
 /// Build the download tasks for a version JSON, but put the version-scoped files
-/// (`<id>.jar`, `<id>-natives`) under `versions/<dir_name>` instead of
+/// (`<id>.jar`) under `versions/<dir_name>` instead of
 /// `versions/<version_json.id>`.
 ///
 /// Used by the self-contained loader install: the loader's directory owns the
-/// client jar and the natives it inherited, and no `versions/<mc_version>`
-/// directory is created at all.
+/// client jar, and no `versions/<mc_version>` directory is created at all.
 pub fn build_tasks_from_version_json_into(
     version_json: &VersionJson,
     root_dir: &Path,
@@ -175,8 +164,7 @@ pub fn build_tasks_from_version_json_into(
                 url: &str,
                 dest_path: PathBuf,
                 sha1: &str,
-                size: u64,
-                extract_to: Option<PathBuf>| {
+                size: u64| {
         if !(sha1.is_empty() || is_sha1_hex(sha1)) || !is_safe_http_url(url) {
             return;
         }
@@ -185,7 +173,6 @@ pub fn build_tasks_from_version_json_into(
             dest_path,
             sha1: sha1.to_string(),
             size,
-            extract_to,
         });
     };
 
@@ -201,21 +188,21 @@ pub fn build_tasks_from_version_json_into(
                     .join(format!("{dir_name}.jar")),
                 &client.sha1,
                 client.size,
-                None,
             );
         }
     }
 
     // 2. libraries
-    let natives_dir = root_dir
-        .join("versions")
-        .join(dir_name)
-        .join(format!("{dir_name}-natives"));
-    let os_name = std::env::consts::OS;
-    let os_arch = std::env::consts::ARCH;
-
     for lib in &version_json.libraries {
         if !evaluate_rules(&lib.rules) {
+            continue;
+        }
+
+        // LWJGL is supplied by the launcher's Android runtime pack (FCL), not by
+        // Mojang. Its Java jars are the desktop build; mixing them with the
+        // Android natives is how a launch fails in a hard-to-see way. Any other
+        // `:natives-` artifact is a desktop native too (jtracy on 26.x).
+        if lib.name.starts_with("org.lwjgl") || lib.name.contains(":natives-") {
             continue;
         }
 
@@ -228,26 +215,7 @@ pub fn build_tasks_from_version_json_into(
                         dest,
                         &artifact.sha1,
                         artifact.size,
-                        None,
                     );
-                }
-            }
-        }
-
-        if let Some(classifiers) = &lib.downloads.classifiers {
-            if let Some(art) = select_native_artifact(lib, classifiers, os_name, os_arch) {
-                if let Some(path) = &art.path {
-                    if let Ok(dest) = crate::safe_path::validate_extract_path(&libraries_dir, path)
-                    {
-                        push(
-                            &mut tasks,
-                            &art.url,
-                            dest,
-                            &art.sha1,
-                            art.size,
-                            Some(natives_dir.clone()),
-                        );
-                    }
                 }
             }
         }
@@ -279,85 +247,6 @@ fn dedupe_by_destination(tasks: Vec<DownloadTask>) -> Vec<DownloadTask> {
     deduped
 }
 
-/// `natives` map keys Mojang has used for one OS, newest spelling first.
-fn native_os_keys(os_name: &str) -> &'static [&'static str] {
-    match os_name {
-        "windows" => &["windows"],
-        // 1.19 renamed `osx` to `macos`; everything older still says `osx`.
-        "macos" => &["macos", "osx"],
-        "linux" => &["linux"],
-        _ => &[],
-    }
-}
-
-/// Classifier suffixes to try for one OS, in preference order.
-fn native_classifier_prefixes(os_name: &str) -> &'static [&'static str] {
-    match os_name {
-        "windows" => &["natives-windows"],
-        "macos" => &["natives-macos", "natives-osx"],
-        "linux" => &["natives-linux"],
-        _ => &[],
-    }
-}
-
-/// Pick the native artifact for the current platform from a library's classifiers.
-///
-/// The declared `natives` map is authoritative: it names the classifier exactly, and its
-/// `${arch}` placeholder (Twitch's 1.8.x libraries) must be expanded before the lookup.
-/// Older or hand-written metadata sometimes omits `natives`, so fall back to prefix matching,
-/// preferring an unsuffixed `natives-<os>`, then `-64`, then `-32`.
-fn select_native_artifact<'a>(
-    lib: &Library,
-    classifiers: &'a HashMap<String, Artifact>,
-    os_name: &str,
-    os_arch: &str,
-) -> Option<&'a Artifact> {
-    if let Some(natives) = &lib.natives {
-        for key in native_os_keys(os_name) {
-            if let Some(classifier) = natives.get(*key) {
-                let wanted = classifier.replace("${arch}", arch_bits(os_arch));
-                if let Some(art) = classifiers.get(&wanted) {
-                    return Some(art);
-                }
-            }
-        }
-    }
-
-    let mut keys: Vec<&String> = classifiers.keys().collect();
-    keys.sort();
-    for prefix in native_classifier_prefixes(os_name) {
-        if let Some(art) = keys
-            .iter()
-            .find(|k| k.as_str() == *prefix)
-            .map(|k| &classifiers[*k])
-        {
-            return Some(art);
-        }
-        for suffix in ["-64", "-32"] {
-            let wanted = format!("{prefix}{suffix}");
-            if let Some(art) = classifiers.get(&wanted) {
-                return Some(art);
-            }
-        }
-        if let Some(art) = keys
-            .iter()
-            .find(|k| k.starts_with(prefix))
-            .map(|k| &classifiers[*k])
-        {
-            return Some(art);
-        }
-    }
-    None
-}
-
-/// `32` or `64`, for expanding a `${arch}` placeholder in a native classifier name.
-fn arch_bits(os_arch: &str) -> &'static str {
-    match os_arch {
-        "x86" | "arm" => "32",
-        _ => "64",
-    }
-}
-
 /// Build download tasks for a set of asset objects into `objects_dir`.
 pub fn build_tasks_from_assets(objects: &[AssetObject], objects_dir: &Path) -> Vec<DownloadTask> {
     let mut seen: HashSet<&str> = HashSet::with_capacity(objects.len());
@@ -376,7 +265,6 @@ pub fn build_tasks_from_assets(objects: &[AssetObject], objects_dir: &Path) -> V
                 dest_path: objects_dir.join(prefix).join(&object.hash),
                 sha1: object.hash.clone(),
                 size: object.size,
-                extract_to: None,
             }
         })
         .collect()

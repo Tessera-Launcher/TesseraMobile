@@ -40,9 +40,6 @@ Added:
   format (`dir=`, `out=`; one URL per file, no checksum).
 - `DownloadPlan::verify` — the single verification step: missing, empty, wrong
   size or wrong SHA-1. The list stays a download list, not a proof.
-- `DownloadPlan::extractions` — natives archives also have to be unpacked, and
-  the aria2 list cannot express that, so the plan carries `(jar, dir)` pairs out
-  of band (`Extraction`). The launcher extracts them after verification.
 - `DownloadPlan::create_dirs` — called by `write`. aria2 does not create `dir=`,
   and one missing directory fails the whole entry.
 - `plan::fill_missing_hashes` — Fabric's profile names its own artifacts without
@@ -50,7 +47,6 @@ Added:
   verifiable.
 - `asset::plan_objects` — fetches the asset index (metadata, cached in
   `assets/indexes/<id>.json`, SHA-1 checked) and lists every object.
-- `lwjgl3::plan_swap` — the 1.8.9 LWJGL 3 exchange, planned instead of fetched.
 - `examples/plan.rs` — `cargo run --example plan -- <root> <mc> [loader]`.
 
 ## Local changes kept from earlier
@@ -60,9 +56,13 @@ Added:
 - **Asset index caching** in `$HOME/.mdt/registry/index/…`: the index is the same
   file every install of that version reads, so it is fetched once and re-verified
   by SHA-1 before use.
-- **Native selection** honours the library's `natives` map and the profile's
-  per-OS rules (`evaluate_rules`), which upstream got slightly wrong for a few
-  1.7-era profiles.
+- **LWJGL is excluded from the plan.** The launcher ships the FCL Android
+  runtime pack (LWJGL jars and natives, OpenAL, SDL, JNA), so Mojang's desktop
+  LWJGL jars must not be downloaded. `build_tasks_from_version_json*` and
+  `plan::entries_from_libraries` skip every `org.lwjgl*` coordinate.
+- **Native classifier and extraction handling is gone.** There is no `natives`
+  field, classifier selection, `extract_to`, `Extraction` or
+  `DownloadPlan::extractions`; the plan only lists files and `verify` judges them.
 - **Mirror-aware Maven and asset URLs** (`urls::ManifestUrls`), including
   `maven_exclude` host lists, so BMCLAPI clients never get linked to
   `libraries.minecraft.net`.

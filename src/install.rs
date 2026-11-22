@@ -3,13 +3,12 @@
 //! The game tree lives at `<data>/游戏`, the same directory name and layout the
 //! desktop build uses (`versions/`, `libraries/`, `assets/`). MDT only resolves
 //! metadata and writes the aria2 list into `<data>/缓存`; the installed aria2c
-//! reads that list, then the plan is verified and the natives boxes unpacked.
+//! reads that list, then the plan is verified. LWJGL is not in that list: the
+//! Android runtime pack downloaded earlier owns those jars and natives.
 //! No JSON-RPC, no progress parsing: aria2's per-file notice lines are the
 //! activity log, exactly like the desktop install screen.
 
-use std::fs::File;
-use std::io::BufReader;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Instant;
 
 use mdt::{HttpDownloader, MdtClient, Mirror, NoopReporter};
@@ -27,7 +26,7 @@ pub fn game_root() -> PathBuf {
 pub enum Event {
     /// One line for the install screen's activity log.
     Log(String),
-    /// The list is downloaded, verified and the natives are unpacked.
+    /// The list is downloaded and verified.
     Finished {
         version: String,
         bytes: u64,
@@ -124,14 +123,6 @@ async fn install(version: &str, report: &impl Fn(Event)) -> Result<(), String> {
         plan.entries.len()
     )));
 
-    let mut unpacked = 0usize;
-    for extraction in &plan.extractions {
-        unpacked += extract_natives(&root.join(&extraction.jar), &root.join(&extraction.into))?;
-    }
-    if unpacked > 0 {
-        report(Event::Log(format!("解压 natives：{unpacked} 个文件")));
-    }
-
     let bytes = plan.total_bytes();
     report(Event::Finished {
         version: plan.id,
@@ -141,41 +132,6 @@ async fn install(version: &str, report: &impl Fn(Event)) -> Result<(), String> {
     Ok(())
 }
 
-/// Unpack a natives jar, skipping its signature metadata.
-fn extract_natives(jar: &Path, into: &Path) -> Result<usize, String> {
-    let file = File::open(jar).map_err(|error| format!("无法打开 {}: {error}", jar.display()))?;
-    let mut archive = zip::ZipArchive::new(BufReader::new(file))
-        .map_err(|error| format!("无法解析 {}: {error}", jar.display()))?;
-    std::fs::create_dir_all(into)
-        .map_err(|error| format!("无法创建 {}: {error}", into.display()))?;
-    let mut written = 0usize;
-    for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .map_err(|error| format!("无法读取 jar 条目: {error}"))?;
-        if entry.is_dir() {
-            continue;
-        }
-        let Some(relative) = entry.enclosed_name() else {
-            return Err(format!("解压 {} 时发现越界路径", jar.display()));
-        };
-        let name = relative.to_string_lossy().replace('\\', "/");
-        if name.starts_with("META-INF/") {
-            continue;
-        }
-        let target = into.join(&relative);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|error| format!("无法创建 {}: {error}", parent.display()))?;
-        }
-        let mut output = File::create(&target)
-            .map_err(|error| format!("无法写入 {}: {error}", target.display()))?;
-        std::io::copy(&mut entry, &mut output).map_err(|error| format!("解压写入失败: {error}"))?;
-        written += 1;
-    }
-    Ok(written)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,5 +139,79 @@ mod tests {
     #[test]
     fn the_game_root_matches_the_desktop_folder() {
         assert!(game_root().ends_with("游戏"));
+    }
+
+    #[test]
+    fn lwjgl_and_its_natives_never_reach_the_download_list() {
+        let json = serde_json::json!({
+            "id": "test",
+            "libraries": [
+                {
+                    "name": "org.lwjgl:lwjgl:3.4.3",
+                    "downloads": {
+                        "artifact": {
+                            "url": "https://libraries.minecraft.net/org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3.jar",
+                            "path": "org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3.jar",
+                            "sha1": "0123456789abcdef0123456789abcdef01234567",
+                            "size": 1
+                        },
+                        "classifiers": {
+                            "natives-linux": {
+                                "url": "https://libraries.minecraft.net/org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3-natives-linux.jar",
+                                "path": "org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3-natives-linux.jar",
+                                "sha1": "0123456789abcdef0123456789abcdef01234567",
+                                "size": 1
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "com.mojang:jtracy:1.14.38:natives-linux",
+                    "downloads": {
+                        "artifact": {
+                            "url": "https://libraries.minecraft.net/com/mojang/jtracy/1.14.38/jtracy-1.14.38-natives-linux.jar",
+                            "path": "com/mojang/jtracy/1.14.38/jtracy-1.14.38-natives-linux.jar",
+                            "sha1": "0123456789abcdef0123456789abcdef01234567",
+                            "size": 1
+                        }
+                    }
+                },
+                {
+                    "name": "com.example:keep:1",
+                    "downloads": {
+                        "artifact": {
+                            "url": "https://libraries.minecraft.net/com/example/keep/1/keep-1.jar",
+                            "path": "com/example/keep/1/keep-1.jar",
+                            "sha1": "0123456789abcdef0123456789abcdef01234567",
+                            "size": 1
+                        }
+                    }
+                }
+            ]
+        });
+        let version: mdt::downloader::VersionJson = serde_json::from_value(json).unwrap();
+        let tasks = mdt::downloader::build_tasks_from_version_json(
+            &version,
+            std::path::Path::new("/game"),
+        );
+        assert_eq!(tasks.len(), 1, "{tasks:?}");
+        assert!(tasks[0].dest_path.ends_with("com/example/keep/1/keep-1.jar"));
+    }
+
+    #[test]
+    fn fabric_libraries_stay_but_lwjgl_does_not() {
+        let profile = serde_json::json!({
+            "libraries": [
+                {"name": "org.lwjgl:lwjgl:3.4.3", "url": "https://maven.example/"},
+                {"name": "com.mojang:jtracy:1.14.38:natives-linux", "url": "https://maven.example/"},
+                {"name": "net.fabricmc:fabric-loader:0.15.11", "url": "https://maven.fabricmc.net/"}
+            ]
+        });
+        let entries = mdt::plan::entries_from_libraries(&profile);
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        assert_eq!(
+            entries[0].path,
+            std::path::Path::new("libraries/net/fabricmc/fabric-loader/0.15.11/fabric-loader-0.15.11.jar")
+        );
     }
 }

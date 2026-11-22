@@ -246,7 +246,8 @@ aria2c、JRE、运行库（含 MobileGlues）三项都装好后，下载页从�
   `c0.x`、`rd-*` 等）合成一行；点行首箭头展开/收起，子项缩进。
 - 进入下载页或最后一项依赖装完时自动拉取；右上角「刷新」强制重取。
 - 点一个版本进入单独的安装页：MDT 把完整清单写到 `/sdcard/Tessera/缓存/<id>.txt`，
-  aria2c 读同一份清单下载，校验通过后解压 natives。没有弹窗，也没有进度条。
+  `org.lwjgl*` 不进入清单（用 FCL 运行库包），natives 也不再由 MDT 处理；
+  aria2c 读同一份清单下载，校验通过即结束。没有弹窗，也没有进度条。
 
 ## 版本安装
 
@@ -260,12 +261,14 @@ aria2c、JRE、运行库（含 MobileGlues）三项都装好后，下载页从�
 - 安装页只有一个活动日志框：aria2 每完成一个文件就追加一行，只保留最近 12 行，
   持续刷新。没有进度条，也不解析 `[#gid]` 或走 JSON-RPC。
 - aria2 退出后跑 `plan.verify`；失败就停在日志和错误摘要，不自动重试整份清单。
-- 成功后解压 natives，结果行给出总用时和平均速度（例如 `26.3 安装完成 · 用时
+- 成功后结果行给出总用时和平均速度（例如 `26.3 安装完成 · 用时
   4 分 12 秒 · 平均 2.3 MB/s`）。返回按钮在安装结束后才出现。
 - 游戏目录仍是 `/sdcard/Tessera/游戏`，布局和桌面版一致：
   `versions/`、`libraries/`、`assets/`。
 
-真机验证安装过 `26.3`：5203 个文件、574.3 MB 清单，校验通过，游戏目录约 586 MB。
+真机验证安装过 `26.3`（过滤 LWJGL 前）：5203 个文件、574.3 MB 清单，校验通过，
+游戏目录约 586 MB。过滤后主机侧生成同一版本的清单是 5194 个文件，没有
+`org/lwjgl` 或 native jar；Android 的规则还会再排除只给 Linux 的 jtracy 原生包。
 
 ## 设置
 
@@ -275,6 +278,7 @@ Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 ## 下一步
 
 - 主页点版本启动；启动参数按 FCL 的形态接上（`os.name`、`org.lwjgl.librarypath`、
-  `java.library.path`、JNA 路径），并过滤掉 Mojang 清单里的 `org.lwjgl` 库。
+  `java.library.path`、JNA 路径）。MDT 已经不再列出 Mojang 的 `org.lwjgl*` 库，
+  natives 也不再下载或解压，全部由运行库包提供。
 - 账户页现在只在打开时读盘；等启动流程接上，再按 `tessera-core` 的 `Effect`
   那套把后台任务接起来。

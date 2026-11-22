@@ -32,9 +32,8 @@
 //! # What still touches the network
 //!
 //! Only metadata: the version manifest, the version JSON, the asset index (and
-//! its cache), the loader profile, and the `<artifact>.jar.sha1` sidecars the
-//! LWJGL 3 swap needs. Those are small and few; everything measured in megabytes
-//! is planned, not fetched.
+//! its cache), and the loader profile. Those are small and few; everything
+//! measured in megabytes is planned, not fetched.
 //!
 //! # Handing the list to aria2
 //!
@@ -65,7 +64,6 @@ mod error;
 #[cfg(feature = "tokio")]
 mod http;
 mod io;
-mod lwjgl3;
 mod safe_path;
 mod security;
 
@@ -97,5 +95,5 @@ pub use manifest::{
 pub use mc_version::McVersion;
 pub use mirror::Mirror;
 pub use modloader::ModLoader;
-pub use plan::{DownloadPlan, Extraction, PlanEntry};
+pub use plan::{DownloadPlan, PlanEntry};
 pub use urls::{reload_runtime_providers, runtime_providers_error, ManifestUrls};
