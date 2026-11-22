@@ -122,6 +122,11 @@ pub fn window_focused() -> bool {
     imp::window_focused()
 }
 
+pub fn start_game_activity(version: &str) -> Result<(), String> {
+    imp::start_game_activity(version)
+}
+
+
 /// Open the system page where "all files access" is granted.
 pub fn request_all_files_access() -> Result<(), String> {
     imp::request_all_files_access()
@@ -242,6 +247,51 @@ mod imp {
             env.call_method(activity, "hasWindowFocus", "()Z", &[])?.z()
         })
         .unwrap_or(false)
+    }
+
+    pub fn start_game_activity(version: &str) -> Result<(), String> {
+        with_activity(|env, activity| {
+            // FindClass on a native thread uses the bootstrap loader, not the
+            // app's dex loader. Go through the Activity's ClassLoader instead.
+            let loader = env
+                .call_method(activity, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+                .l()?;
+            let class_name = env.new_string("org.tessera.mobile.GameActivity")?;
+            let class = env
+                .call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&JObject::from(class_name))],
+                )?
+                .l()?;
+            let intent = env.new_object(
+                "android/content/Intent",
+                "(Landroid/content/Context;Ljava/lang/Class;)V",
+                &[
+                    JValue::Object(activity),
+                    JValue::Object(&class),
+                ],
+            )?;
+            let key = env.new_string("version")?;
+            let value = env.new_string(version)?;
+            env.call_method(
+                &intent,
+                "putExtra",
+                "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                &[
+                    JValue::Object(&JObject::from(key)),
+                    JValue::Object(&JObject::from(value)),
+                ],
+            )?;
+            env.call_method(
+                activity,
+                "startActivity",
+                "(Landroid/content/Intent;)V",
+                &[JValue::Object(&intent)],
+            )?;
+            Ok(())
+        })
     }
 
     /// Start one of the two Settings intents. `uri` picks the per-app page.

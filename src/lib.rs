@@ -768,13 +768,12 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     }
 
-    // Tapping an installed row starts it. The JVM lives in this process, so a
-    // launch screen is just a log tail until main returns.
+    // Tapping an installed row opens the Java game host. The Java host owns
+    // the TextureView/Surface and only then calls nativeStartGame, because SDL
+    // must be initialized against a real Android Surface before the JVM starts.
     {
         let weak = ui.as_weak();
         let busy = launch_busy.clone();
-        let state = state.clone();
-        let lines = Arc::new(Mutex::new(VecDeque::<String>::new()));
         ui.on_launch_requested(move |dir| {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -783,52 +782,20 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                 return;
             }
             let dir = dir.to_string();
-            let active = state.borrow().active.clone();
-            lines.lock().unwrap().clear();
             ui.set_launch_version(dir.clone().into());
             ui.set_launch_busy(true);
             ui.set_launch_log("".into());
-            ui.set_launch_summary("准备启动…".into());
+            ui.set_launch_summary("正在打开游戏窗口…".into());
             ui.set_launch_failed(false);
 
-            let weak = ui.as_weak();
-            let busy = busy.clone();
-            let lines = lines.clone();
-            launch::spawn(dir, active, move |event| {
-                let weak = weak.clone();
-                let busy = busy.clone();
-                let lines = lines.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    let Some(ui) = weak.upgrade() else {
-                        return;
-                    };
-                    match event {
-                        launch::Event::Log(line) => {
-                            append_launch_log(&ui, &lines, line);
-                        }
-                        launch::Event::Started { pid } => {
-                            ui.set_launch_summary(format!("游戏已启动（pid {pid}）").into());
-                        }
-                        launch::Event::Exited { code } => {
-                            busy.store(false, Ordering::SeqCst);
-                            ui.set_launch_busy(false);
-                            let text = match code {
-                                Some(code) => format!("游戏已退出（退出码 {code}）"),
-                                None => "游戏已退出".to_string(),
-                            };
-                            append_launch_log(&ui, &lines, text.clone());
-                            ui.set_launch_summary(format!("{text}；重启应用后才能再次启动").into());
-                        }
-                        launch::Event::Failed(problem) => {
-                            busy.store(false, Ordering::SeqCst);
-                            ui.set_launch_busy(false);
-                            ui.set_launch_failed(true);
-                            append_launch_log(&ui, &lines, format!("启动失败：{problem}"));
-                            ui.set_launch_summary(problem.into());
-                        }
-                    }
-                });
-            });
+            if let Err(problem) = platform::start_game_activity(&dir) {
+                busy.store(false, Ordering::SeqCst);
+                ui.set_launch_busy(false);
+                ui.set_launch_failed(true);
+                ui.set_launch_summary(format!("打开游戏窗口失败：{problem}").into());
+            } else {
+                ui.set_launch_summary("游戏窗口已打开；退出游戏后请重启应用".into());
+            }
         });
     }
 
@@ -1206,6 +1173,32 @@ fn refresh(ui: &AppWindow, state: &Rc<RefCell<State>>, rows: &Rc<VecModel<Accoun
 /// `slint::android::init` installs the platform backend and must run before any
 /// component is created; it also wires Slint's embedded Java helper, which is
 /// what gives `TextInput` a real input connection (the soft keyboard).
+/// Called by `GameActivity` after its TextureView has a real Surface and the
+/// ART-side SDL host has been prepared.
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_org_tessera_mobile_GameActivity_nativeStartGame(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JObject,
+    version: jni::objects::JString,
+) {
+    let Ok(version) = env.get_string(&version) else {
+        return;
+    };
+    let dir: String = version.into();
+    let log = platform::private_dir().join("game-launch.log");
+    launch::spawn(dir, None, move |event| {
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+        {
+            let _ = writeln!(file, "{event:?}");
+        }
+    });
+}
+
 #[cfg(target_os = "android")]
 #[no_mangle]
 fn android_main(app: slint::android::AndroidApp) {

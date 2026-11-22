@@ -349,8 +349,8 @@ fn prepare(
         format!("-Djava.library.path={native_path}"),
         format!("-Dorg.lwjgl.librarypath={}", natives.display()),
         format!("-Dorg.lwjgl.openal.libname={}/libopenal.so", natives.display()),
-        format!("-Dorg.lwjgl.opengl.libname=libmobileglues.so"),
-        format!("-Dorg.lwjgl.egl.libname=libmobileglues.so"),
+        format!("-Dorg.lwjgl.opengl.libname={}", natives.join("libmobileglues.so").display()),
+        format!("-Dorg.lwjgl.egl.libname={}", natives.join("libmobileglues.so").display()),
         format!("-Dorg.lwjgl.system.SharedLibraryExtractPath={}/lwjgl", tmp.display()),
         format!("-Djna.boot.library.path={}", jna.display()),
         format!("-Djava.io.tmpdir={}", tmp.display()),
@@ -382,7 +382,7 @@ fn prepare(
     std::fs::create_dir_all(&mg).ok();
     std::env::set_var("POJAV_RENDERER", "opengles3_mobileglues");
     std::env::set_var("LIBGL_ES", "3");
-    std::env::set_var("LIBGL_EGL", "libmobileglues.so");
+    std::env::set_var("LIBGL_EGL", natives.join("libmobileglues.so"));
     std::env::set_var("POJAVEXEC_EGL", "libmobileglues.so");
     std::env::set_var("MG_DIR_PATH", &mg);
     std::env::set_var("HOME", platform::private_dir());
@@ -562,6 +562,12 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
 
     let native = crate::platform::private_dir().join("runtime/native/arm64-v8a");
     let libjvm = preload(&plan.jre, &native, report)?;
+    // SDL3 is built with SDL_MAIN_NEEDED on this Android build. The normal
+    // SDLActivity path calls SDL_SetMainReady from Java; our host loads SDL3
+    // early, so do the equivalent on the thread that will run `main`.
+    if let Err(problem) = sdl_main_ready(&native.join("libSDL3.so")) {
+        report(Event::Log(format!("SDL_SetMainReady 失败：{problem}")));
+    }
     let symbol = CString::new("JNI_CreateJavaVM").unwrap();
     let create_ptr = unsafe { dlsym(libjvm, symbol.as_ptr()) };
     if create_ptr.is_null() {
@@ -716,6 +722,42 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
 unsafe extern "C" {
     fn dlsym(handle: *mut std::os::raw::c_void, symbol: *const std::os::raw::c_char)
         -> *mut std::os::raw::c_void;
+}
+
+#[cfg(target_os = "android")]
+fn sdl_main_ready(path: &Path) -> Result<(), String> {
+    use std::ffi::CString;
+    use std::os::raw::{c_char, c_int, c_void};
+
+    const RTLD_NOW: c_int = 2;
+    const RTLD_GLOBAL: c_int = 0x100;
+    unsafe extern "C" {
+        fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+        fn dlerror() -> *mut c_char;
+    }
+    let name = CString::new(path.to_string_lossy().as_bytes())
+        .map_err(|_| "SDL3 路径包含 NUL".to_string())?;
+    let handle = unsafe { dlopen(name.as_ptr(), RTLD_NOW | RTLD_GLOBAL) };
+    if handle.is_null() {
+        return Err("无法加载 libSDL3.so".to_string());
+    }
+    let symbol = CString::new("SDL_SetMainReady").unwrap();
+    let ptr = unsafe { dlsym(handle, symbol.as_ptr()) };
+    if ptr.is_null() {
+        let error = unsafe { dlerror() };
+        let message = if error.is_null() {
+            "unknown".to_string()
+        } else {
+            unsafe { std::ffi::CStr::from_ptr(error) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        return Err(message);
+    }
+    let call: unsafe extern "C" fn() = unsafe { std::mem::transmute(ptr) };
+    unsafe { call() };
+    Ok(())
 }
 
 #[cfg(target_os = "android")]

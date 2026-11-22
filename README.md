@@ -290,7 +290,7 @@ Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 
 ## 启动（实验）
 
-主页点一行会进入全屏启动日志，JVM 用 JvmTest 的路线在当前进程里启动：
+主页点一行会打开全屏 Java `GameActivity`，Surface 就绪后 JVM 用 JvmTest 的路线在当前进程里启动：
 
 - 绝对路径预加载 `libc++_shared.so` / JRE 库 / `libjvm.so`；
 - `JNI_CreateJavaVM` 在新线程上创建 VM；
@@ -298,17 +298,21 @@ Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 - 自动补 `java.compiler`（safe JRE 没有）和 FCL `CallbackBridge` 兼容类；
 - 日志写到 `files/game.log`。
 
-真机已经跑到 Fabric 0.20.1 + Minecraft 26.3 的初始化阶段，当前卡在 SDL：
+SDL 现在由一个独立的 Java `GameActivity` 承载：它创建 `TextureView`，在
+ART VM 里先加载 `libpojavexec.so` 并安装 FCL 的 SDL hook，再把 Surface 交给
+`SDLActivity`/`SDLSurface`；Rust 侧只负责 Surface 就绪后启动 JVM，并在游戏线程调用
+`SDL_SetMainReady`。SDL 的 Java 宿主和 `CallbackBridge` 在 `android/java/`，
+FCL 的 `libpojavexec`/`libfcl`/`libbytehook`/`libandroidnsbypass` 与 SDL 二进制在
+`android/jniLibs/arm64-v8a/`。
 
-```
-Unable to initialize SDL: Application didn't initialize properly,
-did you include SDL_main.h in the file containing your main() function?
-```
+真机已经跑通：
 
-这不是 JVM/启动参数的问题，而是还没有 FCL 的 `SDLActivity`/`SDLSurface` 承载层。下一步要把
-`java.compiler.jar`、`fcl-callbackbridge.jar`、`libpojavexec.so`、`libfcl.so`、
-`libandroidnsbypass.so`、`libbytehook.so`、`libspirv-cross.so` 固化进运行库包，
-并把 SDL Surface 接到游戏 Activity。
+- SDL3 的 `nativeSetupJNI()`、`surfaceCreated()`、`surfaceChanged()`；
+- SDL 初始化不再报 `did you include SDL_main.h`；
+- Fabric 0.20.1 + Minecraft 26.3 进入 Render thread；
+- 最新一次启动已越过 SDL 初始化，进入 Render thread 并创建图形后端；
+- 当前是黑屏、进程存活但没有画面，下一步排查 SDL 的 swap / TextureView
+  Surface 绑定和 RenderPearl 的首帧。
 
 ## 下一步
 
