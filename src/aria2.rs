@@ -91,8 +91,7 @@ pub fn write_list(path: &Path, entries: &[ListEntry]) -> Result<(), String> {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("无法创建 {}: {error}", parent.display()))?;
     }
-    std::fs::write(path, body)
-        .map_err(|error| format!("无法写入 {}: {error}", path.display()))
+    std::fs::write(path, body).map_err(|error| format!("无法写入 {}: {error}", path.display()))
 }
 
 /// A PEM bundle of the system CA certificates.
@@ -129,8 +128,7 @@ pub fn ca_bundle() -> Result<PathBuf, String> {
     if data.is_empty() {
         return Err("找不到系统 CA 证书".to_string());
     }
-    std::fs::write(&path, data)
-        .map_err(|error| format!("无法写入 {}: {error}", path.display()))?;
+    std::fs::write(&path, data).map_err(|error| format!("无法写入 {}: {error}", path.display()))?;
     Ok(path)
 }
 
@@ -166,7 +164,7 @@ pub fn run_input(
         "--retry-wait=1".to_string(),
         "--connect-timeout=10".to_string(),
         "--timeout=30".to_string(),
-        "-j8".to_string(),
+        "-j4".to_string(),
         "-x1".to_string(),
         "-s1".to_string(),
         format!("--stop-with-process={}", std::process::id()),
@@ -206,7 +204,7 @@ pub fn run_input(
                 }
             }
         }
-        if line.contains("errorCode=") || line.contains("Exception:") {
+        if line.contains("errorCode=") || line.contains("Exception:") || line.contains("URI=") {
             errors.push(line.to_string());
             if errors.len() > 8 {
                 errors.remove(0);
@@ -235,12 +233,125 @@ pub fn run_input(
     if status.success() {
         Ok(())
     } else {
-        let detail = errors
-            .last()
-            .cloned()
-            .unwrap_or_else(|| format!("退出码 {}", status.code().unwrap_or(-1)));
+        let detail = if errors.is_empty() {
+            format!("退出码 {}", status.code().unwrap_or(-1))
+        } else {
+            errors
+                .iter()
+                .rev()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
         Err(format!("aria2c 下载失败：{detail}"))
     }
+}
+
+/// How many files aria2 fetches at once. Desktop uses 16: high enough for the
+/// thousands of small asset files, low enough that the CDN does not start
+/// refusing connections from one phone.
+pub const LIST_CONCURRENCY: usize = 16;
+
+/// What aria2 said about one file, as a path relative to the game directory.
+///
+/// Notice level prints one line per finished file and nothing while a file is
+/// in flight, so this is the only per-file signal without JSON-RPC.
+#[must_use]
+pub fn file_from_line(line: &str, root: &Path) -> Option<String> {
+    let rest = line
+        .split_once("Download complete: ")
+        .or_else(|| line.split_once("not complete: "))?
+        .1
+        .trim();
+    if rest.is_empty() {
+        return None;
+    }
+    let path = Path::new(rest);
+    Some(
+        path.strip_prefix(root)
+            .unwrap_or(path)
+            .display()
+            .to_string(),
+    )
+}
+
+/// Run one install list exactly like the desktop build: aria2 writes the files,
+/// its notice log is the activity stream, and verification happens afterwards.
+/// No JSON-RPC and no progress parsing — just the per-file lines.
+pub fn run_list(list: &Path, root: &Path, mut on_file: impl FnMut(String)) -> Result<i32, String> {
+    let binary = installed().ok_or_else(|| "aria2c 还未安装".to_string())?;
+    let mut args = vec![
+        "-i".to_string(),
+        list.display().to_string(),
+        format!("-j{LIST_CONCURRENCY}"),
+        "-x1".to_string(),
+        "-s1".to_string(),
+        "--no-conf=true".to_string(),
+        "--enable-color=false".to_string(),
+        "--show-console-readout=false".to_string(),
+        "--summary-interval=0".to_string(),
+        "--console-log-level=notice".to_string(),
+        "--auto-file-renaming=false".to_string(),
+        "--allow-overwrite=true".to_string(),
+        "--file-allocation=none".to_string(),
+        "--connect-timeout=10".to_string(),
+        "--timeout=30".to_string(),
+        "--max-tries=3".to_string(),
+        "--retry-wait=1".to_string(),
+        format!("--stop-with-process={}", std::process::id()),
+    ];
+    if cfg!(target_os = "android") {
+        let ca = ca_bundle()?;
+        args.push(format!("--ca-certificate={}", ca.display()));
+    }
+
+    let mut child = Command::new(binary)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("无法启动 aria2c: {error}"))?;
+
+    let stderr = child.stderr.take();
+    let (sender, receiver) = std::sync::mpsc::channel::<String>();
+    let drain = stderr.map(|stderr| {
+        let sender = sender.clone();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = sender.send(line);
+            }
+        })
+    });
+
+    if let Some(stdout) = child.stdout.take() {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if let Some(file) = file_from_line(&line, root) {
+                on_file(file);
+            }
+            while let Ok(line) = receiver.try_recv() {
+                if let Some(file) = file_from_line(&line, root) {
+                    on_file(file);
+                }
+            }
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|error| format!("等待 aria2c 失败: {error}"))?;
+    drop(sender);
+    for line in receiver.iter() {
+        if let Some(file) = file_from_line(&line, root) {
+            on_file(file);
+        }
+    }
+    if let Some(drain) = drain {
+        let _ = drain.join();
+    }
+    Ok(status.code().unwrap_or(-1))
 }
 
 /// Parse `[#gid 1.5MiB/2.3MiB(64%) CN:1 DL:526KiB ETA:1s]`.
@@ -287,7 +398,11 @@ fn parse_size(value: &str) -> Option<u64> {
 pub enum Event {
     /// A line for the status card.
     Log(String),
-    Progress { done: u64, total: u64, speed: f64 },
+    Progress {
+        done: u64,
+        total: u64,
+        speed: f64,
+    },
     Installed {
         version: String,
         path: PathBuf,
@@ -324,7 +439,8 @@ async fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
         .parent()
         .ok_or_else(|| "安装路径没有父目录".to_string())?
         .to_path_buf();
-    std::fs::create_dir_all(&dir).map_err(|error| format!("无法创建 {}: {error}", dir.display()))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("无法创建 {}: {error}", dir.display()))?;
     let work = dir.join(".incoming");
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work).map_err(|error| format!("无法创建临时目录: {error}"))?;
@@ -424,8 +540,7 @@ fn extract(archive: &Path, dest: &Path, member: &str) -> Result<PathBuf, String>
         let out = dest.join("aria2c");
         let mut target =
             File::create(&out).map_err(|error| format!("无法写入 {}: {error}", out.display()))?;
-        std::io::copy(&mut entry, &mut target)
-            .map_err(|error| format!("解压写入失败: {error}"))?;
+        std::io::copy(&mut entry, &mut target).map_err(|error| format!("解压写入失败: {error}"))?;
         target
             .sync_all()
             .map_err(|error| format!("无法写入 {}: {error}", out.display()))?;

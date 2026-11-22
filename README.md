@@ -167,7 +167,8 @@ aria2c 自己用 reqwest 下载（鸡生蛋）；之后 JRE 的清单、JRE 压�
 AAR/jar 都由 aria2c 拉取。Android 没有 OpenSSL 默认 CA 路径，所以第一次会从
 `/system/etc/security/cacerts`（Android 14+ 还有
 `/apex/com.android.conscrypt/cacerts`）拼出 `files/ca.pem`，再传
-`--ca-certificate`。进度从 aria2 的 `--show-console-readout` 行解析。
+`--ca-certificate`。依赖安装的进度从 aria2 的 `--show-console-readout` 行解析；
+版本安装则直接刷 aria2 的 per-file notice 日志。
 
 GitHub 下载统一走设置页的 GitHub Proxy：读写的还是桌面版那份
 `/sdcard/Tessera/配置.toml` 里的 `github_proxy`，保存时只改这一个键，桌面版写的其他
@@ -235,22 +236,36 @@ aria2c、JRE、运行库（含 MobileGlues）三项都装好后，下载页从�
   `26.4-snapshot-10 ~ ...`、按年份归组的每周快照）以及同前缀的旧版本（`b1.x`、`a1.x`、
   `c0.x`、`rd-*` 等）合成一行；点行首箭头展开/收起，子项缩进。
 - 进入下载页或最后一项依赖装完时自动拉取；右上角「刷新」强制重取。
-- 现在只是只读列表，点选版本和安装流程还没接。
+- 点一个版本进入单独的安装页：MDT 把完整清单写到 `/sdcard/Tessera/缓存/<id>.txt`，
+  aria2c 读同一份清单下载，校验通过后解压 natives。没有弹窗，也没有进度条。
+
+## 版本安装
+
+点版本列表里的一行，不是弹窗，而是整页切到「安装」：
+
+- MDT 只解析元数据，并把完整的 `aria2c --input-file` 清单写到
+  `/sdcard/Tessera/缓存/<id>.txt`；它和桌面版交给 aria2 的是同一种文件。
+- aria2c 的参数照桌面版抄：`-j16 -x1 -s1`、`--console-log-level=notice`、
+  `--show-console-readout=false`、`--summary-interval=0`、`--max-tries=3`、
+  `--stop-with-process`，Android 额外传 `--ca-certificate`。
+- 安装页只有一个活动日志框：aria2 每完成一个文件就追加一行，只保留最近 12 行，
+  持续刷新。没有进度条，也不解析 `[#gid]` 或走 JSON-RPC。
+- aria2 退出后跑 `plan.verify`；失败就停在日志和错误摘要，不自动重试整份清单。
+- 成功后解压 natives，结果行给出总用时和平均速度（例如 `26.3 安装完成 · 用时
+  4 分 12 秒 · 平均 2.3 MB/s`）。返回按钮在安装结束后才出现。
+- 游戏目录仍是 `/sdcard/Tessera/游戏`，布局和桌面版一致：
+  `versions/`、`libraries/`、`assets/`。
+
+真机验证安装过 `26.3`：5203 个文件、574.3 MB 清单，校验通过，游戏目录约 586 MB。
 
 ## 设置
 
 GitHub Proxy，和桌面版同一个文件、同一个键。页面底部注明 Android 运行库借用自
 Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 
-## 设置
-
-目前只放了 GitHub Proxy，和桌面版同一个文件、同一个键。
-
 ## 下一步
 
-- 接版本安装：从版本列表选一个版本，把 `mdt-minecraft` 生成的 aria2 列表交给
-  `aria2c`；计划里过滤 `org.lwjgl`，natives 换成上面这套私有运行库。
 - 启动参数按 FCL 的形态接上（`os.name`、`org.lwjgl.librarypath`、
-  `java.library.path`、JNA 路径）。
-- 账户页现在只在打开时读盘；等有了安装流程，再按 `tessera-core` 的 `Effect`
+  `java.library.path`、JNA 路径），并过滤掉 Mojang 清单里的 `org.lwjgl` 库。
+- 账户页现在只在打开时读盘；等启动流程接上，再按 `tessera-core` 的 `Effect`
   那套把后台任务接起来。

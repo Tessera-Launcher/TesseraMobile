@@ -85,6 +85,11 @@ export component AppWindow inherits Window {
     in-out property <string> version-query: "";
     in-out property <VersionFilter> version-filter: VersionFilter.all;
     in-out property <int> version-count: 0;
+    in-out property <string> install-version: "";
+    in-out property <bool> install-busy: false;
+    in-out property <string> install-log: "";
+    in-out property <string> install-summary: "";
+    in-out property <bool> install-failed: false;
 
     /// Settings: the one desktop setting the phone front-end owns today.
     in-out property <string> github-proxy: "";
@@ -110,6 +115,8 @@ export component AppWindow inherits Window {
     callback versions-refresh;
     callback versions-refilter(VersionFilter, string);
     callback version-group-toggled(string);
+    callback version-install(string);
+    callback install-dismissed;
     callback github-proxy-saved(string);
 
     // The download page never reads the disk itself: entering the tab is the
@@ -155,6 +162,11 @@ export component AppWindow inherits Window {
                 version-query <=> root.version-query;
                 version-filter <=> root.version-filter;
                 version-count: root.version-count;
+                install-version: root.install-version;
+                install-busy: root.install-busy;
+                install-log: root.install-log;
+                install-summary: root.install-summary;
+                install-failed: root.install-failed;
                 install-requested => {
                     root.aria2-install-requested();
                 }
@@ -172,6 +184,12 @@ export component AppWindow inherits Window {
                 }
                 version-group-toggled(key) => {
                     root.version-group-toggled(key);
+                }
+                version-install(version) => {
+                    root.version-install(version);
+                }
+                install-dismissed => {
+                    root.install-dismissed();
                 }
             }
             if root.tab == Tab.settings : SettingsPage {

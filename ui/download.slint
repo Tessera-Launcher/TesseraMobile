@@ -1,8 +1,8 @@
-// 下载: the version list lands here once the two dependencies are installed.
+// 下载: dependency prompts, the version list, and the full-screen install log.
 //
-// The page owns the install prompts only. Tapping a tab is not a disk read, so
-// the window asks Rust for both dependencies when this tab opens; while either
-// is missing, this is all the page shows.
+// Tapping a tab is not a disk read, so the window asks Rust for the dependency
+// state when this tab opens. A version tap swaps the list for the install page;
+// aria2's per-file notice lines are the only progress.
 
 import { Theme } from "theme.slint";
 import { ListView } from "std-widgets.slint";
@@ -152,6 +152,7 @@ component FilterChip inherits Rectangle {
 component VersionRowView inherits Rectangle {
     in property <VersionRow> version;
     callback group-toggled(string);
+    callback install-version(string);
 
     height: 54px;
     background: touch.pressed ? Theme.pressed : transparent;
@@ -198,6 +199,8 @@ component VersionRowView inherits Rectangle {
         clicked => {
             if (root.version.group) {
                 root.group-toggled(root.version.key);
+            } else {
+                root.install-version(root.version.label);
             }
         }
     }
@@ -227,6 +230,11 @@ export component DownloadPage inherits Page {
     in property <[VersionRow]> versions;
     in property <bool> versions-loading: false;
     in property <string> versions-error: "";
+    in property <string> install-version: "";
+    in property <bool> install-busy: false;
+    in property <string> install-log: "";
+    in property <string> install-summary: "";
+    in property <bool> install-failed: false;
 
     callback install-requested;
     callback jre-install-requested;
@@ -234,6 +242,8 @@ export component DownloadPage inherits Page {
     callback refresh-versions;
     callback versions-refilter(VersionFilter, string);
     callback version-group-toggled(string);
+    callback version-install(string);
+    callback install-dismissed;
 
     property <bool> ready: root.aria2-installed && root.jre-installed && root.runtime-installed;
 
@@ -245,7 +255,7 @@ export component DownloadPage inherits Page {
     }
 
     // Only the full dependency set unlocks the index.
-    if root.ready : VerticalLayout {
+    if root.ready && root.install-version == "" : VerticalLayout {
         x: Theme.gutter;
         y: root.top-inset + 64px;
         width: root.width - Theme.gutter * 2;
@@ -381,13 +391,16 @@ export component DownloadPage inherits Page {
                 group-toggled(key) => {
                     root.version-group-toggled(key);
                 }
+                install-version(version) => {
+                    root.version-install(version);
+                }
             }
         }
     }
 
     // Three cards do not fit on every phone; the page pans instead of clipping
     // the third one.
-    if !root.ready : Flickable {
+    if !root.ready && root.install-version == "" : Flickable {
         x: Theme.gutter;
         y: root.top-inset + 64px;
         width: root.width - Theme.gutter * 2;
@@ -436,6 +449,92 @@ export component DownloadPage inherits Page {
                 enabled: root.aria2-installed;
                 install-requested => {
                     root.runtime-install-requested();
+                }
+            }
+        }
+    }
+
+    // The install screen replaces the version list; it is not a dialog.
+    if root.install-version != "" : Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: Theme.bg;
+
+        VerticalLayout {
+            x: Theme.gutter;
+            y: root.top-inset + 18px;
+            width: root.width - Theme.gutter * 2;
+            height: root.height - (root.top-inset + 18px) - 8px;
+            spacing: 10px;
+
+            Rectangle {
+                height: 42px;
+                background: transparent;
+
+                Text {
+                    x: 0px;
+                    y: 7px;
+                    text: "安装 " + root.install-version;
+                    font-size: 22px;
+                    font-weight: 600;
+                    color: Theme.text;
+                }
+
+                if !root.install-busy : HeaderButton {
+                    x: parent.width - self.width;
+                    y: 6px;
+                    label: "返回";
+                    clicked => {
+                        root.install-dismissed();
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                border-radius: 12px;
+                background: Theme.bar;
+                border-width: 1px;
+                border-color: Theme.line;
+
+                Text {
+                    x: 14px;
+                    y: 10px;
+                    text: "活动";
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: Theme.dim;
+                }
+
+                Text {
+                    x: 12px;
+                    y: 32px;
+                    width: parent.width - 24px;
+                    height: parent.height - 42px;
+                    text: root.install-log;
+                    font-size: 11px;
+                    color: Theme.dim;
+                    wrap: word-wrap;
+                }
+            }
+
+            Rectangle {
+                height: 44px;
+                background: transparent;
+
+                Text {
+                    x: 0px;
+                    y: 0px;
+                    width: 100%;
+                    height: 100%;
+                    text: root.install-summary;
+                    font-size: 12px;
+                    color: root.install-failed
+                        ? Theme.danger
+                        : (root.install-busy ? Theme.dim : Theme.accent);
+                    wrap: word-wrap;
                 }
             }
         }

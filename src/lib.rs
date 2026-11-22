@@ -6,16 +6,17 @@
 //! activity is created, and the window runs its own event loop until the
 //! activity is destroyed.
 
-use std::cell::RefCell;
 #[cfg(target_os = "android")]
 use std::cell::Cell;
+use std::cell::RefCell;
+use std::collections::VecDeque;
 #[cfg(target_os = "android")]
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
@@ -26,11 +27,12 @@ pub mod aria2;
 pub mod download;
 pub mod fsutil;
 pub mod http;
+pub mod install;
 pub mod jre;
 pub mod login;
-pub mod settings;
 pub mod platform;
 pub mod runtime;
+pub mod settings;
 pub mod state;
 pub mod version_tree;
 pub mod versions;
@@ -82,6 +84,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     let versions_loading = Arc::new(AtomicBool::new(false));
     let versions_loaded = Arc::new(AtomicBool::new(false));
     let picker = Arc::new(Mutex::new(versions::Picker::default()));
+    let install_busy = Arc::new(AtomicBool::new(false));
     {
         let initial = versions::Filter::from_key(&config.borrow().download_filter);
         picker.lock().unwrap().set_filter(initial);
@@ -439,9 +442,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_aria2_message(text.into());
                         }
                         aria2::Event::Installed {
-                            version,
-                            source,
-                            ..
+                            version, source, ..
                         } => {
                             busy.store(false, Ordering::SeqCst);
                             ui.set_aria2_busy(false);
@@ -546,9 +547,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             ui.set_jre_busy(false);
                             ui.set_jre_installed(true);
                             ui.set_jre_progress(1.0);
-                            ui.set_jre_message(
-                                format!("JRE {id} 已安装 · {source}").into(),
-                            );
+                            ui.set_jre_message(format!("JRE {id} 已安装 · {source}").into());
                             load_versions(&ui, &versions_loading, &versions_loaded, &picker, false);
                         }
                         jre::Event::Failed(problem) => {
@@ -719,6 +718,99 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let mut picker = picker.lock().unwrap();
             picker.toggle(&key);
             publish_versions(&ui, &picker);
+        });
+    }
+
+    // Installing a version: MDT writes the list into `缓存`, aria2 downloads
+    // it, then the plan is verified and natives are unpacked. The install tab
+    // is a full screen, not a popup; its activity log is the only progress.
+    {
+        let weak = ui.as_weak();
+        let busy = install_busy.clone();
+        let lines = Arc::new(Mutex::new(VecDeque::<String>::new()));
+        ui.on_version_install(move |version| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if busy.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let version = version.to_string();
+            lines.lock().unwrap().clear();
+            ui.set_install_version(version.clone().into());
+            ui.set_install_busy(true);
+            ui.set_install_log("".into());
+            ui.set_install_summary("下载中，进度见上方日志".into());
+            ui.set_install_failed(false);
+
+            let weak = ui.as_weak();
+            let busy = busy.clone();
+            let lines = lines.clone();
+            install::spawn(version, move |event| {
+                let weak = weak.clone();
+                let busy = busy.clone();
+                let lines = lines.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = weak.upgrade() else {
+                        return;
+                    };
+                    match event {
+                        install::Event::Log(line) => {
+                            append_install_log(&ui, &lines, line);
+                        }
+                        install::Event::Finished {
+                            version,
+                            bytes,
+                            seconds,
+                        } => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_install_busy(false);
+                            ui.set_install_failed(false);
+                            append_install_log(&ui, &lines, format!("安装完成：{version}"));
+                            let time = if seconds >= 60.0 {
+                                format!(
+                                    "{} 分 {} 秒",
+                                    (seconds / 60.0) as u64,
+                                    (seconds % 60.0) as u64
+                                )
+                            } else {
+                                format!("{seconds:.0} 秒")
+                            };
+                            let average = if seconds > 0.0 {
+                                (bytes as f64 / seconds).round() as u64
+                            } else {
+                                0
+                            };
+                            ui.set_install_summary(
+                                format!(
+                                    "{version} 安装完成 · 用时 {time} · 平均 {}/s",
+                                    http::human_size(average)
+                                )
+                                .into(),
+                            );
+                        }
+                        install::Event::Failed(problem) => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_install_busy(false);
+                            ui.set_install_failed(true);
+                            append_install_log(&ui, &lines, format!("安装失败：{problem}"));
+                            ui.set_install_summary(problem.into());
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        ui.on_install_dismissed(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_install_version("".into());
+                ui.set_install_log("".into());
+                ui.set_install_summary("".into());
+                ui.set_install_failed(false);
+            }
         });
     }
 
@@ -1095,4 +1187,20 @@ fn begin_login(
             }
         }
     });
+}
+
+/// Keep the install screen's activity tail short enough to fit its box; the
+/// desktop pane scrolls, the phone simply drops the oldest line as new files land.
+fn append_install_log(
+    ui: &AppWindow,
+    lines: &Arc<Mutex<VecDeque<String>>>,
+    line: impl Into<String>,
+) {
+    let mut lines = lines.lock().unwrap();
+    lines.push_back(line.into());
+    while lines.len() > 12 {
+        lines.pop_front();
+    }
+    let text = lines.iter().cloned().collect::<Vec<_>>().join("\n");
+    ui.set_install_log(text.into());
 }
