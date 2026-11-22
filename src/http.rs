@@ -164,7 +164,10 @@ mod tests {
     #[test]
     fn the_source_says_proxy_direct_or_fallback() {
         let direct = "https://github.com/a/x.zip";
-        assert_eq!(source_label(direct, direct, direct, false), "直连 github.com");
+        assert_eq!(
+            source_label(direct, direct, direct, false),
+            "直连 github.com"
+        );
         assert_eq!(
             source_label(
                 "https://ghfast.top/https://github.com/a/x.zip",
@@ -175,7 +178,12 @@ mod tests {
             "代理 ghfast.top"
         );
         assert_eq!(
-            source_label(direct, direct, "https://objects.githubusercontent.com/x", true),
+            source_label(
+                direct,
+                direct,
+                "https://objects.githubusercontent.com/x",
+                true
+            ),
             "直连 github.com → objects.githubusercontent.com（代理失败，已回退）"
         );
     }

@@ -318,12 +318,12 @@ mod tests {
             ]
         });
         let version: mdt::downloader::VersionJson = serde_json::from_value(json).unwrap();
-        let tasks = mdt::downloader::build_tasks_from_version_json(
-            &version,
-            std::path::Path::new("/game"),
-        );
+        let tasks =
+            mdt::downloader::build_tasks_from_version_json(&version, std::path::Path::new("/game"));
         assert_eq!(tasks.len(), 1, "{tasks:?}");
-        assert!(tasks[0].dest_path.ends_with("com/example/keep/1/keep-1.jar"));
+        assert!(tasks[0]
+            .dest_path
+            .ends_with("com/example/keep/1/keep-1.jar"));
     }
 
     #[test]
@@ -339,7 +339,9 @@ mod tests {
         assert_eq!(entries.len(), 1, "{entries:?}");
         assert_eq!(
             entries[0].path,
-            std::path::Path::new("libraries/net/fabricmc/fabric-loader/0.15.11/fabric-loader-0.15.11.jar")
+            std::path::Path::new(
+                "libraries/net/fabricmc/fabric-loader/0.15.11/fabric-loader-0.15.11.jar"
+            )
         );
     }
 }

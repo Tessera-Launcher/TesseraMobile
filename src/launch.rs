@@ -153,11 +153,7 @@ struct Plan {
     jre: PathBuf,
 }
 
-fn prepare(
-    dir_name: &str,
-    active: Option<&Path>,
-    report: &impl Fn(Event),
-) -> Result<Plan, String> {
+fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Result<Plan, String> {
     let game = install::game_root();
     let version_dir = game.join("versions").join(dir_name);
     let json_path = version_dir.join(format!("{dir_name}.json"));
@@ -190,7 +186,10 @@ fn prepare(
     // ---- classpath -------------------------------------------------------
     let mut classpath = Vec::new();
     let mut missing = Vec::new();
-    if let Some(libraries) = version.get("libraries").and_then(serde_json::Value::as_array) {
+    if let Some(libraries) = version
+        .get("libraries")
+        .and_then(serde_json::Value::as_array)
+    {
         for library in libraries {
             if !rules_allow(library.get("rules"), &HashMap::new()) {
                 continue;
@@ -208,10 +207,7 @@ fn prepare(
                 .and_then(|artifact| artifact.get("path"))
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string)
-                .or_else(|| {
-                    mdt::installer::library_path_from_name(name)
-                        .ok()
-                });
+                .or_else(|| mdt::installer::library_path_from_name(name).ok());
             let Some(path) = path else {
                 continue;
             };
@@ -239,7 +235,10 @@ fn prepare(
         .map_err(|error| format!("读取 {} 失败：{error}", lwjgl_dir.display()))?
         .flatten()
         .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("jar")))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
+        })
         .collect();
     lwjgl_jars.sort();
     if lwjgl_jars.is_empty() {
@@ -267,7 +266,10 @@ fn prepare(
         .flatten()
         .flatten()
         .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("jar")))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
+        })
         .collect();
     mods.sort();
 
@@ -288,7 +290,11 @@ fn prepare(
         "账户：{}（{}）{}",
         creds.username,
         creds.user_type,
-        if active.is_none() { " · 未选择账户，使用离线 Player" } else { "" }
+        if active.is_none() {
+            " · 未选择账户，使用离线 Player"
+        } else {
+            ""
+        }
     )));
 
     let jre = crate::jre::installed().ok_or_else(|| "请先安装 JRE".to_string())?;
@@ -326,7 +332,11 @@ fn prepare(
     variables.insert("resolution_height", "480".to_string());
 
     let features = HashMap::new();
-    let profile_jvm = argument_values(version.get("arguments").and_then(|a| a.get("jvm")), &features, &variables);
+    let profile_jvm = argument_values(
+        version.get("arguments").and_then(|a| a.get("jvm")),
+        &features,
+        &variables,
+    );
     let mut jvm_args = profile_jvm
         .into_iter()
         .filter(|arg| keep_profile_jvm(arg))
@@ -348,10 +358,22 @@ fn prepare(
         format!("-Djava.class.path={classpath_string}"),
         format!("-Djava.library.path={native_path}"),
         format!("-Dorg.lwjgl.librarypath={}", natives.display()),
-        format!("-Dorg.lwjgl.openal.libname={}/libopenal.so", natives.display()),
-        format!("-Dorg.lwjgl.opengl.libname={}", natives.join("libmobileglues.so").display()),
-        format!("-Dorg.lwjgl.egl.libname={}", natives.join("libmobileglues.so").display()),
-        format!("-Dorg.lwjgl.system.SharedLibraryExtractPath={}/lwjgl", tmp.display()),
+        format!(
+            "-Dorg.lwjgl.openal.libname={}/libopenal.so",
+            natives.display()
+        ),
+        format!(
+            "-Dorg.lwjgl.opengl.libname={}",
+            natives.join("libmobileglues.so").display()
+        ),
+        format!(
+            "-Dorg.lwjgl.egl.libname={}",
+            natives.join("libmobileglues.so").display()
+        ),
+        format!(
+            "-Dorg.lwjgl.system.SharedLibraryExtractPath={}/lwjgl",
+            tmp.display()
+        ),
         format!("-Djna.boot.library.path={}", jna.display()),
         format!("-Djava.io.tmpdir={}", tmp.display()),
         format!("-Duser.home={}", platform::private_dir().display()),
@@ -369,14 +391,25 @@ fn prepare(
         "-Xmx2048m".to_string(),
         "-XX:+UseG1GC".to_string(),
         format!("-XX:AltTempDir={}", tmp.display()),
-        format!("-XX:ErrorFile={}/hs_err_pid%p.log", platform::private_dir().display()),
+        format!(
+            "-XX:ErrorFile={}/hs_err_pid%p.log",
+            platform::private_dir().display()
+        ),
     ]);
 
-    let game_args = argument_values(
+    let mut game_args = argument_values(
         version.get("arguments").and_then(|a| a.get("game")),
         &features,
         &variables,
     );
+    // High-end Android devices have a Vulkan 1.3+ driver with dynamic
+    // rendering, push descriptors and synchronization2. Force the Vulkan
+    // backend first; RenderPearl still falls back to OpenGL if device
+    // creation fails, so this is safe on older hardware too.
+    if !game_args.iter().any(|arg| arg == "--graphicsBackend") {
+        game_args.push("--graphicsBackend".to_string());
+        game_args.push("vulkan".to_string());
+    }
 
     let mg = platform::private_dir().join("mobileglues");
     std::fs::create_dir_all(&mg).ok();
@@ -580,11 +613,8 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
     if create_ptr.is_null() {
         return Err("libjvm.so 没有 JNI_CreateJavaVM".to_string());
     }
-    type CreateFn = unsafe extern "system" fn(
-        *mut *mut RawVm,
-        *mut *mut c_void,
-        *mut c_void,
-    ) -> jint;
+    type CreateFn =
+        unsafe extern "system" fn(*mut *mut RawVm, *mut *mut c_void, *mut c_void) -> jint;
     let create: CreateFn = unsafe { std::mem::transmute(create_ptr) };
 
     let c_options: Vec<CString> = plan
@@ -606,10 +636,7 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
         ignoreUnrecognized: 0,
     };
 
-    report(Event::Log(format!(
-        "JVM 参数：{}",
-        plan.jvm_args.join(" ")
-    )));
+    report(Event::Log(format!("JVM 参数：{}", plan.jvm_args.join(" "))));
     let mut vm_ptr: *mut RawVm = std::ptr::null_mut();
     let mut env_ptr: *mut c_void = std::ptr::null_mut();
     // HotSpot writes its rejection reason to stderr, which Android otherwise
@@ -644,14 +671,21 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
     drop(stderr_file);
     if rc != 0 || vm_ptr.is_null() {
         if let Ok(text) = std::fs::read_to_string(&stderr_path) {
-            for line in text.lines().rev().take(8).collect::<Vec<_>>().into_iter().rev() {
+            for line in text
+                .lines()
+                .rev()
+                .take(8)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
                 report(Event::Log(format!("JVM: {line}")));
             }
         }
         return Err(format!("JNI_CreateJavaVM 返回 {rc}"));
     }
-    let vm = unsafe { JavaVM::from_raw(vm_ptr) }
-        .map_err(|error| format!("JavaVM 指针无效：{error}"))?;
+    let vm =
+        unsafe { JavaVM::from_raw(vm_ptr) }.map_err(|error| format!("JavaVM 指针无效：{error}"))?;
     let mut env = vm
         .get_env()
         .or_else(|_| vm.attach_current_thread_permanently())
@@ -665,7 +699,11 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
         .find_class(&class_name)
         .map_err(|error| format!("找不到主类 {}：{error}", plan.main_class))?;
     let array: JObjectArray = env
-        .new_object_array(plan.game_args.len() as i32, "java/lang/String", JObject::null())
+        .new_object_array(
+            plan.game_args.len() as i32,
+            "java/lang/String",
+            JObject::null(),
+        )
         .map_err(|error| format!("创建游戏参数失败：{error}"))?;
     for (index, arg) in plan.game_args.iter().enumerate() {
         let text = env
@@ -714,7 +752,14 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
     drop(game_file);
     if failed {
         if let Ok(text) = std::fs::read_to_string(&game_log) {
-            for line in text.lines().rev().take(20).collect::<Vec<_>>().into_iter().rev() {
+            for line in text
+                .lines()
+                .rev()
+                .take(20)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
                 report(Event::Log(format!("游戏: {line}")));
             }
         }
@@ -727,8 +772,10 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
 
 #[cfg(target_os = "android")]
 unsafe extern "C" {
-    fn dlsym(handle: *mut std::os::raw::c_void, symbol: *const std::os::raw::c_char)
-        -> *mut std::os::raw::c_void;
+    fn dlsym(
+        handle: *mut std::os::raw::c_void,
+        symbol: *const std::os::raw::c_char,
+    ) -> *mut std::os::raw::c_void;
 }
 
 #[cfg(target_os = "android")]
@@ -895,8 +942,14 @@ mod tests {
     fn placeholders_are_replaced() {
         let mut vars = HashMap::new();
         vars.insert("auth_player_name", "Steve".to_string());
-        assert_eq!(substitute("--username ${auth_player_name}", &vars), "--username Steve");
-        assert_eq!(substitute("--uuid ${auth_uuid}", &vars), "--uuid ${auth_uuid}");
+        assert_eq!(
+            substitute("--username ${auth_player_name}", &vars),
+            "--username Steve"
+        );
+        assert_eq!(
+            substitute("--uuid ${auth_uuid}", &vars),
+            "--uuid ${auth_uuid}"
+        );
     }
 
     #[test]

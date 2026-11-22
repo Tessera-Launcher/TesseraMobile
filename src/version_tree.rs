@@ -109,12 +109,7 @@ pub fn title(all: &[Version], visible: &[usize], first: usize, last: usize) -> S
 }
 
 /// Lay the filtered list out as rows.
-pub fn build(
-    all: &[Version],
-    visible: &[usize],
-    expanded: &[String],
-    tree: bool,
-) -> Vec<Row> {
+pub fn build(all: &[Version], visible: &[usize], expanded: &[String], tree: bool) -> Vec<Row> {
     let version = |index: usize| &all[visible[index]];
     let mut rows = Vec::with_capacity(visible.len().max(1));
     let mut index = 0;
@@ -214,11 +209,7 @@ mod tests {
         let rows = build_for_test(&versions, &[]);
         assert_eq!(
             labels(&versions, &rows),
-            [
-                "1.21.8",
-                "1.21.9-pre3 ~ 1.21.9-pre1",
-                "1.21.7"
-            ]
+            ["1.21.8", "1.21.9-pre3 ~ 1.21.9-pre1", "1.21.7"]
         );
     }
 
@@ -230,7 +221,10 @@ mod tests {
         ];
         let rows = build_for_test(&versions, &["1.21.9-pre".to_string()]);
         assert_eq!(rows.len(), 3);
-        assert!(matches!(rows[0].kind, RowKind::Group { expanded: true, .. }));
+        assert!(matches!(
+            rows[0].kind,
+            RowKind::Group { expanded: true, .. }
+        ));
         assert_eq!(rows[1].depth, CHILD_DEPTH);
     }
 
@@ -243,6 +237,9 @@ mod tests {
             version("a1.0.16", VersionType::OldAlpha),
         ];
         let rows = build_for_test(&versions, &[]);
-        assert_eq!(labels(&versions, &rows), ["b1.7.3 ~ b1.7.2", "a1.2.6 ~ a1.0.16"]);
+        assert_eq!(
+            labels(&versions, &rows),
+            ["b1.7.3 ~ b1.7.2", "a1.2.6 ~ a1.0.16"]
+        );
     }
 }

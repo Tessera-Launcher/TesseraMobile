@@ -82,7 +82,12 @@ pub fn scan(game: &Path) -> Vec<Installed> {
             },
         ));
     }
-    found.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| right.1.id.cmp(&left.1.id)));
+    found.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| right.1.id.cmp(&left.1.id))
+    });
     found.into_iter().map(|(_, row)| row).collect()
 }
 

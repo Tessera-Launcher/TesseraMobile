@@ -126,6 +126,14 @@ pub fn start_game_activity(version: &str) -> Result<(), String> {
     imp::start_game_activity(version)
 }
 
+/// The APK's native library directory (`ApplicationInfo.nativeLibraryDir`).
+///
+/// Binaries there are executable even when the app targets API 29 or newer;
+/// files under `files/` are not. `aria2c` is shipped as `libaria2c.so` and run
+/// from this directory.
+pub fn native_library_dir() -> Option<PathBuf> {
+    imp::native_library_dir()
+}
 
 /// Open the system page where "all files access" is granted.
 pub fn request_all_files_access() -> Result<(), String> {
@@ -182,10 +190,7 @@ mod imp {
             let intent = env.new_object(
                 "android/content/Intent",
                 "(Ljava/lang/String;Landroid/net/Uri;)V",
-                &[
-                    JValue::Object(&JObject::from(action)),
-                    JValue::Object(&uri),
-                ],
+                &[JValue::Object(&JObject::from(action)), JValue::Object(&uri)],
             )?;
             env.call_method(
                 &intent,
@@ -204,7 +209,8 @@ mod imp {
     }
 
     fn sdk_int(env: &mut jni::JNIEnv) -> Result<i32, jni::errors::Error> {
-        env.get_static_field("android/os/Build$VERSION", "SDK_INT", "I")?.i()
+        env.get_static_field("android/os/Build$VERSION", "SDK_INT", "I")?
+            .i()
     }
 
     pub fn external_storage_root() -> Option<PathBuf> {
@@ -243,10 +249,28 @@ mod imp {
     }
 
     pub fn window_focused() -> bool {
+        with_activity(|env, activity| env.call_method(activity, "hasWindowFocus", "()Z", &[])?.z())
+            .unwrap_or(false)
+    }
+
+    pub fn native_library_dir() -> Option<PathBuf> {
         with_activity(|env, activity| {
-            env.call_method(activity, "hasWindowFocus", "()Z", &[])?.z()
+            let info = env
+                .call_method(
+                    activity,
+                    "getApplicationInfo",
+                    "()Landroid/content/pm/ApplicationInfo;",
+                    &[],
+                )?
+                .l()?;
+            let dir = env
+                .get_field(&info, "nativeLibraryDir", "Ljava/lang/String;")?
+                .l()?;
+            let dir = jni::objects::JString::from(dir);
+            let dir = env.get_string(&dir)?;
+            Ok(PathBuf::from(dir.to_string_lossy().into_owned()))
         })
-        .unwrap_or(false)
+        .ok()
     }
 
     pub fn start_game_activity(version: &str) -> Result<(), String> {
@@ -268,10 +292,7 @@ mod imp {
             let intent = env.new_object(
                 "android/content/Intent",
                 "(Landroid/content/Context;Ljava/lang/Class;)V",
-                &[
-                    JValue::Object(activity),
-                    JValue::Object(&class),
-                ],
+                &[JValue::Object(activity), JValue::Object(&class)],
             )?;
             let key = env.new_string("version")?;
             let value = env.new_string(version)?;
@@ -306,10 +327,7 @@ mod imp {
             Some(uri) => env.new_object(
                 "android/content/Intent",
                 "(Ljava/lang/String;Landroid/net/Uri;)V",
-                &[
-                    JValue::Object(&JObject::from(action)),
-                    JValue::Object(uri),
-                ],
+                &[JValue::Object(&JObject::from(action)), JValue::Object(uri)],
             )?,
             None => env.new_object(
                 "android/content/Intent",
@@ -445,6 +463,15 @@ mod imp {
     /// A desktop has no shared-storage volume to report.
     pub fn external_storage_root() -> Option<PathBuf> {
         None
+    }
+
+    /// No APK native library directory on a desktop.
+    pub fn native_library_dir() -> Option<PathBuf> {
+        None
+    }
+
+    pub fn start_game_activity(_version: &str) -> Result<(), String> {
+        Err("桌面构建不启动游戏".to_string())
     }
 
     /// The desktop has no such permission: everything is already reachable.

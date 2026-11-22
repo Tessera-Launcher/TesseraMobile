@@ -442,7 +442,10 @@ mod tests {
     #[test]
     fn the_offline_uuid_is_the_one_the_game_computes() {
         // The value the game gives an unauthenticated "Steve".
-        assert_eq!(offline_uuid("Steve"), "5627dd98-e6be-3c21-b8a8-e92344183641");
+        assert_eq!(
+            offline_uuid("Steve"),
+            "5627dd98-e6be-3c21-b8a8-e92344183641"
+        );
         // Version 3 (name based, MD5) and the RFC 4122 variant bits.
         assert!(offline_uuid("Steve").starts_with("5627dd98-e6be-3c21-b8a8"));
     }

@@ -54,7 +54,10 @@ impl Identity {
 #[derive(Debug)]
 pub enum Event {
     /// The user must open `url` and enter `user_code`.
-    DeviceCode { user_code: String, url: String },
+    DeviceCode {
+        user_code: String,
+        url: String,
+    },
     Succeeded {
         player_name: String,
         application: String,

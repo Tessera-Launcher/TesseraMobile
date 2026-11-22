@@ -51,8 +51,22 @@ pub fn binary_path() -> PathBuf {
 }
 
 /// The installed binary, if it is there.
+///
+/// Android 10+ refuses to execute files under the app's writable data dir
+/// when `targetSdkVersion` is 29 or newer, even after `chmod 755`. The APK
+/// therefore ships the pinned binary as `libaria2c.so`, which the package
+/// manager extracts into the executable native library directory.
 pub fn installed() -> Option<PathBuf> {
-    supported().then(binary_path).filter(|path| path.is_file())
+    if !supported() {
+        return None;
+    }
+    if let Some(bundled) = crate::platform::native_library_dir().map(|dir| dir.join("libaria2c.so"))
+    {
+        if bundled.is_file() {
+            return Some(bundled);
+        }
+    }
+    Some(binary_path()).filter(|path| path.is_file())
 }
 
 /// One entry in an `aria2c --input-file` list.

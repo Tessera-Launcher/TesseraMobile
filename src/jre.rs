@@ -75,7 +75,11 @@ pub fn installed() -> Option<PathBuf> {
 #[derive(Debug)]
 pub enum Event {
     Log(String),
-    Progress { done: u64, total: u64, speed: f64 },
+    Progress {
+        done: u64,
+        total: u64,
+        speed: f64,
+    },
     /// The archive is verified; unpacking the 100+ MB tree can take a moment.
     Extracting,
     Installed {
@@ -120,10 +124,7 @@ fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
     let (manifest, _manifest_url) = fetch_manifest(&work, proxy, report)?;
     if manifest.abi != "arm64-v8a" {
         let _ = std::fs::remove_dir_all(&work);
-        return Err(format!(
-            "JRE 清单是 {}，本机需要 arm64-v8a",
-            manifest.abi
-        ));
+        return Err(format!("JRE 清单是 {}，本机需要 arm64-v8a", manifest.abi));
     }
     if manifest.files.zip.name.is_empty() || manifest.files.zip.sha256.len() != 64 {
         let _ = std::fs::remove_dir_all(&work);
@@ -180,10 +181,7 @@ fn fetch_manifest(
     let urls = http::github_candidates(MANIFEST_URL, proxy);
     let mut last_error = String::new();
     for url in urls {
-        report(Event::Log(format!(
-            "JRE 清单：{}",
-            http::shorten(&url)
-        )));
+        report(Event::Log(format!("JRE 清单：{}", http::shorten(&url))));
         let list = work.join("manifest.list");
         aria2::write_list(
             &list,
@@ -269,12 +267,7 @@ fn download_zip(
             let _ = std::fs::remove_file(work.join("jre.zip"));
             continue;
         }
-        return Ok(http::source_label(
-            &url,
-            zip_url,
-            &url,
-            proxy_configured,
-        ));
+        return Ok(http::source_label(&url, zip_url, &url, proxy_configured));
     }
     let _ = std::fs::remove_dir_all(work);
     Err(format!("JRE 下载失败：{last_error}"))
@@ -283,8 +276,8 @@ fn download_zip(
 /// Unpack every regular file, keeping the archive's relative layout.
 fn extract_zip(archive: &Path, dest: &Path) -> Result<(), String> {
     let file = File::open(archive).map_err(|error| format!("无法打开下载文件: {error}"))?;
-    let mut zip = zip::ZipArchive::new(BufReader::new(file))
-        .map_err(|error| format!("解压失败：{error}"))?;
+    let mut zip =
+        zip::ZipArchive::new(BufReader::new(file)).map_err(|error| format!("解压失败：{error}"))?;
     for index in 0..zip.len() {
         let mut entry = zip
             .by_index(index)
@@ -304,8 +297,7 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), String> {
         }
         let mut target =
             File::create(&out).map_err(|error| format!("无法写入 {}: {error}", out.display()))?;
-        std::io::copy(&mut entry, &mut target)
-            .map_err(|error| format!("解压写入失败: {error}"))?;
+        std::io::copy(&mut entry, &mut target).map_err(|error| format!("解压写入失败: {error}"))?;
     }
     Ok(())
 }

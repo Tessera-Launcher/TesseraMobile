@@ -555,5 +555,4 @@ mod tests {
         assert!(api.size > BUNDLED_MIN_BYTES, "size {}", api.size);
         assert!(api.sha1.is_some());
     }
-
 }

@@ -55,7 +55,10 @@ impl Settings {
             Err(error) => {
                 return (
                     Self::default(),
-                    Some(format!("无法读取 {}: {error}，使用默认设置", path.display())),
+                    Some(format!(
+                        "无法读取 {}: {error}，使用默认设置",
+                        path.display()
+                    )),
                 )
             }
         };
@@ -64,7 +67,10 @@ impl Settings {
             Err(error) => {
                 return (
                     Self::default(),
-                    Some(format!("{} 解析失败: {error}，使用默认设置", path.display())),
+                    Some(format!(
+                        "{} 解析失败: {error}，使用默认设置",
+                        path.display()
+                    )),
                 )
             }
         };
@@ -200,7 +206,11 @@ mod tests {
     #[test]
     fn a_newer_schema_is_refused() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(Settings::path(tmp.path()), "version = 99\ngithub_proxy = \"x\"\n").unwrap();
+        std::fs::write(
+            Settings::path(tmp.path()),
+            "version = 99\ngithub_proxy = \"x\"\n",
+        )
+        .unwrap();
         let (settings, note) = Settings::load(tmp.path());
         assert_eq!(settings, Settings::default());
         assert!(note.unwrap().contains("更新的版本"));

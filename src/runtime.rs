@@ -53,30 +53,150 @@ struct RuntimeFile {
 /// Files checked in at FCL `722e2361`. Hashes are of the repository files
 /// themselves, not of the extracted members.
 const FILES: &[RuntimeFile] = &[
-    RuntimeFile { path: "FCL/libs/lwjgl-3.4.1-natives-release.aar", size: 17119989, sha256: "5a8c40b5b94525385a90b64eaac1df83bc12efcb89ddcfa6bd4b967b85a89ffb", kind: Kind::LwjglNatives },
-    RuntimeFile { path: "FCL/libs/openal-soft-release.aar", size: 3620056, sha256: "424947ee10e26b76a3aff6769e6a74fa4fb11b556183997b270f8278e7d3532c", kind: Kind::OpenAl },
-    RuntimeFile { path: "FCL/libs/SDL-release.aar", size: 4064412, sha256: "5527d2e59e76b7a58eef0d54bb8ae0ca153593a9dfc0ed73ac84fb829520298b", kind: Kind::Sdl },
-    RuntimeFile { path: "FCL/libs/MobileGlues-release.aar", size: 8280469, sha256: "d92070c32c155822ca9d6be200130cbe74b8b8e725eb7bbc9da1a2d3348434b3", kind: Kind::MobileGlues },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-3.4.1-merged-modules.jar", size: 2094689, sha256: "d2e1a65beb53ecbc4538ec3624a5e129adc46174198b3ccaeb49b3e5ec4fbe18", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-freetype.jar", size: 465796, sha256: "e7001800c634f13f15f767493c1debfb92d5422942c5160c524df0fa3de54a46", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-lwjglx.jar", size: 237121, sha256: "03838ef76b021ea9e3b50c392659d34e61e851a1d327344e088fb939781cde2c", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-nanovg.jar", size: 76348, sha256: "e825f799ac378d13e61bcae419953ecc23b8ee272c26408ffdb09f151af602c4", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-openal.jar", size: 150986, sha256: "67c72306d4a233b473f66faf72de5be8f589a3c34823faf56cbd7e0f52796fc6", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-shaderc.jar", size: 147618, sha256: "fa02faae80950e5bb28bdcc5a9cc7cbb7e552d723b72777d2ab1adece9d2287e", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-spng.jar", size: 114650, sha256: "10daa293281297d1a968a615a957233d4b8268cf7446fae118212e2330b0fb12", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-spvc.jar", size: 141553, sha256: "ddd4ba883d72b6ac2759370c81877b1ac291c552e2eb1d97911199755cb6e571", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-stb.jar", size: 136953, sha256: "4f36cacea19d64f37a16dac91095d3542626fac726bb6934ecd480f5677ce7b6", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-tinyfd.jar", size: 7677, sha256: "879e1403a5547cc335eb44a27052f5e33510ccc04ddd317f5825f76cc91cdc09", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-vma.jar", size: 103366, sha256: "1895f7f3ad8d16e90db490a8abdc094048976e462e42d747c40941cf559fef2b", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-vulkan.jar", size: 8540747, sha256: "75957d2845320adf2799c9f154c4e2b35202cf007d0d1e36a238a2fb212391fa", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl.jar", size: 1169477, sha256: "a675ff2a93ecb9f94bdd72bb3a9ab648f4413225749c46fc83d5aae8a8260275", kind: Kind::LwjglJar },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/jna/5.13.0/natives/arm64-v8a/libjnidispatch.so", size: 168176, sha256: "95fd6129757ceae73472b014c0c7e23a27a193adc4c355693706998aa4757be8", kind: Kind::Jna("5.13.0") },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/jna/5.14.0/natives/arm64-v8a/libjnidispatch.so", size: 168176, sha256: "3730ce014f7a6807ae74af78c3b9f5a3cba1f5886316b3d3858493df923efe96", kind: Kind::Jna("5.14.0") },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/jna/5.15.0/natives/arm64-v8a/libjnidispatch.so", size: 168280, sha256: "1daf1544f2718b2dd694fc94b7418fd201181450e211c4d15fa532626a488c78", kind: Kind::Jna("5.15.0") },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/jna/5.16.0/natives/arm64-v8a/libjnidispatch.so", size: 168328, sha256: "7e9c0158491077e5b9f249d81e30ed873bd7dd711cbb5c06b98c291402498b76", kind: Kind::Jna("5.16.0") },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/jna/5.17.0/natives/arm64-v8a/libjnidispatch.so", size: 176520, sha256: "abc26e994517bcaa3309acdb0a27373864086c7569c89d3087b8626fada9ef06", kind: Kind::Jna("5.17.0") },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/jna/5.18.0/natives/arm64-v8a/libjnidispatch.so", size: 176520, sha256: "abc26e994517bcaa3309acdb0a27373864086c7569c89d3087b8626fada9ef06", kind: Kind::Jna("5.18.0") },
-    RuntimeFile { path: "FCL/src/main/assets/app_runtime/jna/5.19.1/natives/arm64-v8a/libjnidispatch.so", size: 176520, sha256: "abc26e994517bcaa3309acdb0a27373864086c7569c89d3087b8626fada9ef06", kind: Kind::Jna("5.19.1") },
+    RuntimeFile {
+        path: "FCL/libs/lwjgl-3.4.1-natives-release.aar",
+        size: 17119989,
+        sha256: "5a8c40b5b94525385a90b64eaac1df83bc12efcb89ddcfa6bd4b967b85a89ffb",
+        kind: Kind::LwjglNatives,
+    },
+    RuntimeFile {
+        path: "FCL/libs/openal-soft-release.aar",
+        size: 3620056,
+        sha256: "424947ee10e26b76a3aff6769e6a74fa4fb11b556183997b270f8278e7d3532c",
+        kind: Kind::OpenAl,
+    },
+    RuntimeFile {
+        path: "FCL/libs/SDL-release.aar",
+        size: 4064412,
+        sha256: "5527d2e59e76b7a58eef0d54bb8ae0ca153593a9dfc0ed73ac84fb829520298b",
+        kind: Kind::Sdl,
+    },
+    RuntimeFile {
+        path: "FCL/libs/MobileGlues-release.aar",
+        size: 8280469,
+        sha256: "d92070c32c155822ca9d6be200130cbe74b8b8e725eb7bbc9da1a2d3348434b3",
+        kind: Kind::MobileGlues,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-3.4.1-merged-modules.jar",
+        size: 2094689,
+        sha256: "d2e1a65beb53ecbc4538ec3624a5e129adc46174198b3ccaeb49b3e5ec4fbe18",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-freetype.jar",
+        size: 465796,
+        sha256: "e7001800c634f13f15f767493c1debfb92d5422942c5160c524df0fa3de54a46",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-lwjglx.jar",
+        size: 237121,
+        sha256: "03838ef76b021ea9e3b50c392659d34e61e851a1d327344e088fb939781cde2c",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-nanovg.jar",
+        size: 76348,
+        sha256: "e825f799ac378d13e61bcae419953ecc23b8ee272c26408ffdb09f151af602c4",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-openal.jar",
+        size: 150986,
+        sha256: "67c72306d4a233b473f66faf72de5be8f589a3c34823faf56cbd7e0f52796fc6",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-shaderc.jar",
+        size: 147618,
+        sha256: "fa02faae80950e5bb28bdcc5a9cc7cbb7e552d723b72777d2ab1adece9d2287e",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-spng.jar",
+        size: 114650,
+        sha256: "10daa293281297d1a968a615a957233d4b8268cf7446fae118212e2330b0fb12",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-spvc.jar",
+        size: 141553,
+        sha256: "ddd4ba883d72b6ac2759370c81877b1ac291c552e2eb1d97911199755cb6e571",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-stb.jar",
+        size: 136953,
+        sha256: "4f36cacea19d64f37a16dac91095d3542626fac726bb6934ecd480f5677ce7b6",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-tinyfd.jar",
+        size: 7677,
+        sha256: "879e1403a5547cc335eb44a27052f5e33510ccc04ddd317f5825f76cc91cdc09",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-vma.jar",
+        size: 103366,
+        sha256: "1895f7f3ad8d16e90db490a8abdc094048976e462e42d747c40941cf559fef2b",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl-vulkan.jar",
+        size: 8540747,
+        sha256: "75957d2845320adf2799c9f154c4e2b35202cf007d0d1e36a238a2fb212391fa",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/lwjgl/3.4.1/lwjgl.jar",
+        size: 1169477,
+        sha256: "a675ff2a93ecb9f94bdd72bb3a9ab648f4413225749c46fc83d5aae8a8260275",
+        kind: Kind::LwjglJar,
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/jna/5.13.0/natives/arm64-v8a/libjnidispatch.so",
+        size: 168176,
+        sha256: "95fd6129757ceae73472b014c0c7e23a27a193adc4c355693706998aa4757be8",
+        kind: Kind::Jna("5.13.0"),
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/jna/5.14.0/natives/arm64-v8a/libjnidispatch.so",
+        size: 168176,
+        sha256: "3730ce014f7a6807ae74af78c3b9f5a3cba1f5886316b3d3858493df923efe96",
+        kind: Kind::Jna("5.14.0"),
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/jna/5.15.0/natives/arm64-v8a/libjnidispatch.so",
+        size: 168280,
+        sha256: "1daf1544f2718b2dd694fc94b7418fd201181450e211c4d15fa532626a488c78",
+        kind: Kind::Jna("5.15.0"),
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/jna/5.16.0/natives/arm64-v8a/libjnidispatch.so",
+        size: 168328,
+        sha256: "7e9c0158491077e5b9f249d81e30ed873bd7dd711cbb5c06b98c291402498b76",
+        kind: Kind::Jna("5.16.0"),
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/jna/5.17.0/natives/arm64-v8a/libjnidispatch.so",
+        size: 176520,
+        sha256: "abc26e994517bcaa3309acdb0a27373864086c7569c89d3087b8626fada9ef06",
+        kind: Kind::Jna("5.17.0"),
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/jna/5.18.0/natives/arm64-v8a/libjnidispatch.so",
+        size: 176520,
+        sha256: "abc26e994517bcaa3309acdb0a27373864086c7569c89d3087b8626fada9ef06",
+        kind: Kind::Jna("5.18.0"),
+    },
+    RuntimeFile {
+        path: "FCL/src/main/assets/app_runtime/jna/5.19.1/natives/arm64-v8a/libjnidispatch.so",
+        size: 176520,
+        sha256: "abc26e994517bcaa3309acdb0a27373864086c7569c89d3087b8626fada9ef06",
+        kind: Kind::Jna("5.19.1"),
+    },
 ];
 
 const LWJGL: &str = "lwjgl/3.4.1";
@@ -214,20 +334,12 @@ fn install(proxy: &str, report: &impl Fn(Event)) -> Result<(), String> {
             Kind::OpenAl | Kind::Sdl => {
                 let archive = aar_dir.join(&name);
                 verify(&archive, file)?;
-                extracted.push(extract_aar(
-                    &archive,
-                    "jni/arm64-v8a/",
-                    &tree.join(NATIVE),
-                )?);
+                extracted.push(extract_aar(&archive, "jni/arm64-v8a/", &tree.join(NATIVE))?);
             }
             Kind::MobileGlues => {
                 let archive = aar_dir.join(&name);
                 verify(&archive, file)?;
-                extracted.push(extract_aar(
-                    &archive,
-                    "jni/arm64-v8a/",
-                    &tree.join(NATIVE),
-                )?);
+                extracted.push(extract_aar(&archive, "jni/arm64-v8a/", &tree.join(NATIVE))?);
                 extract_member(
                     &archive,
                     "assets/licenses/mobileglues-lgplv2.1-license.txt",
@@ -282,11 +394,7 @@ fn destination_dir(aar_dir: &Path, tree: &Path, kind: Kind) -> PathBuf {
 }
 
 fn output_name(file: &RuntimeFile) -> String {
-    file.path
-        .rsplit('/')
-        .next()
-        .unwrap_or("file")
-        .to_string()
+    file.path.rsplit('/').next().unwrap_or("file").to_string()
 }
 
 fn installed_at(tree: &Path) -> Option<()> {
@@ -316,7 +424,8 @@ fn verify(path: &Path, file: &RuntimeFile) -> Result<(), String> {
 
 /// Copy the regular files under `prefix` into `dest`, flattened.
 fn extract_aar(archive: &Path, prefix: &str, dest: &Path) -> Result<usize, String> {
-    let file = File::open(archive).map_err(|error| format!("无法打开 {}: {error}", archive.display()))?;
+    let file =
+        File::open(archive).map_err(|error| format!("无法打开 {}: {error}", archive.display()))?;
     let mut zip = zip::ZipArchive::new(BufReader::new(file))
         .map_err(|error| format!("解压 {} 失败：{error}", archive.display()))?;
     std::fs::create_dir_all(dest)
@@ -342,8 +451,7 @@ fn extract_aar(archive: &Path, prefix: &str, dest: &Path) -> Result<usize, Strin
         let out = dest.join(name);
         let mut target =
             File::create(&out).map_err(|error| format!("无法写入 {}: {error}", out.display()))?;
-        std::io::copy(&mut entry, &mut target)
-            .map_err(|error| format!("解压写入失败: {error}"))?;
+        std::io::copy(&mut entry, &mut target).map_err(|error| format!("解压写入失败: {error}"))?;
         count += 1;
     }
     Ok(count)
@@ -351,7 +459,8 @@ fn extract_aar(archive: &Path, prefix: &str, dest: &Path) -> Result<usize, Strin
 
 /// Copy one named member out of an AAR.
 fn extract_member(archive: &Path, member: &str, dest: &Path) -> Result<(), String> {
-    let file = File::open(archive).map_err(|error| format!("无法打开 {}: {error}", archive.display()))?;
+    let file =
+        File::open(archive).map_err(|error| format!("无法打开 {}: {error}", archive.display()))?;
     let mut zip = zip::ZipArchive::new(BufReader::new(file))
         .map_err(|error| format!("解压 {} 失败：{error}", archive.display()))?;
     let mut entry = zip
@@ -363,8 +472,7 @@ fn extract_member(archive: &Path, member: &str, dest: &Path) -> Result<(), Strin
     }
     let mut target =
         File::create(dest).map_err(|error| format!("无法写入 {}: {error}", dest.display()))?;
-    std::io::copy(&mut entry, &mut target)
-        .map_err(|error| format!("解压写入失败: {error}"))?;
+    std::io::copy(&mut entry, &mut target).map_err(|error| format!("解压写入失败: {error}"))?;
     Ok(())
 }
 

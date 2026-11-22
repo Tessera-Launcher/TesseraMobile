@@ -65,7 +65,8 @@ fn rewrite(path: &Path) -> Result<bool, String> {
 fn write_normalized(source: &Path, tmp: &Path) -> Result<(), String> {
     let mut archive = zip::ZipArchive::new(BufReader::new(open(source)?))
         .map_err(|error| format!("无法解析 {}: {error}", source.display()))?;
-    let output = File::create(tmp).map_err(|error| format!("无法写入 {}: {error}", tmp.display()))?;
+    let output =
+        File::create(tmp).map_err(|error| format!("无法写入 {}: {error}", tmp.display()))?;
     let mut writer = zip::ZipWriter::new(output);
     for index in 0..archive.len() {
         let mut entry = archive
