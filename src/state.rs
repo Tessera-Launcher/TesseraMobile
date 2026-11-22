@@ -34,6 +34,19 @@ impl State {
         state
     }
 
+    /// The data root: `/sdcard/Tessera` on Android.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Create the data root (and with it the credentials tree's parent).
+    ///
+    /// On Android the root lives on `/sdcard`, which cannot be written until
+    /// the all-files permission is granted; the caller retries after it is.
+    pub fn ensure_root(&self) -> std::io::Result<()> {
+        std::fs::create_dir_all(&self.root)
+    }
+
     /// `<data>/凭据` — credentials live here.
     pub fn credentials_dir(&self) -> PathBuf {
         self.root.join("凭据")

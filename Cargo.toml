@@ -32,6 +32,10 @@ minecraft-auth = { path = "vendor/minecraft-auth" }
 md5 = { package = "md-5", version = "0.10" }
 hex = "0.4"
 
+# The pinned aria2c artifact is a zip; its bytes are checked before unpacking.
+sha2 = "0.10"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
 # Sign-in runs on its own thread with a current-thread runtime; nothing on the
 # UI thread ever awaits.
 tokio = { version = "1", features = ["rt", "time"] }
@@ -75,6 +79,12 @@ extract_native_libs = true
 [[package.metadata.android.uses_permission]]
 name = "android.permission.INTERNET"
 
+# Instances live under `/sdcard`, outside the app's private directory, so the
+# launcher needs the "all files access" special permission. It is a Settings
+# toggle rather than a runtime dialog; `src/platform.rs` opens that page.
+[[package.metadata.android.uses_permission]]
+name = "android.permission.MANAGE_EXTERNAL_STORAGE"
+
 [[package.metadata.android.application.activity]]
 name = "android.app.NativeActivity"
 
@@ -89,6 +99,12 @@ categories = ["android.intent.category.LAUNCHER"]
 [profile.dev]
 opt-level = 1
 debug = false
+
+# A JRE/aria2 install is dominated by hashing and decompression.
+[profile.release.package.sha2]
+opt-level = 3
+[profile.release.package.zip]
+opt-level = 3
 
 [profile.release]
 lto = "fat"

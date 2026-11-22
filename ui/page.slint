@@ -50,9 +50,9 @@ export component ChoiceRow inherits Rectangle {
     background: touch.pressed ? Theme.pressed : transparent;
 
     Rectangle {
-        y: root.height - 1px;
+        y: root.height - Theme.hairline;
         width: 100%;
-        height: 1px;
+        height: Theme.hairline;
         background: Theme.line;
         visible: !root.last;
     }

@@ -1,7 +1,110 @@
-// 下载: layout lands here once the flow exists.
+// 下载: the version list lands here once the downloader is installed.
+//
+// The one thing this page owns today is the aria2c prompt. Tapping a tab is
+// not a disk read, so the window asks Rust for the binary when this tab opens;
+// while it is missing, this is all the page shows.
 
-import { Page } from "page.slint";
+import { Theme } from "theme.slint";
+import { Page, SheetButton } from "page.slint";
 
 export component DownloadPage inherits Page {
     title: "下载";
+
+    in property <bool> aria2-installed: false;
+    in property <bool> aria2-busy: false;
+    in property <float> aria2-progress: 0;
+    in property <string> aria2-message: "";
+    callback install-requested;
+
+    if !root.aria2-installed : Rectangle {
+        x: Theme.gutter;
+        y: root.top-inset + 72px;
+        width: root.width - Theme.gutter * 2;
+        height: 252px;
+        border-radius: 14px;
+        background: Theme.bar;
+        border-width: 1px;
+        border-color: Theme.line;
+
+        Text {
+            x: 18px;
+            y: 18px;
+            text: "需要 aria2c";
+            font-size: 17px;
+            font-weight: 600;
+            color: Theme.text;
+        }
+
+        Text {
+            x: 18px;
+            y: 48px;
+            width: root.width - Theme.gutter * 2 - 36px;
+            height: 42px;
+            text: "下载器还没安装。Tessera 用 aria2c 拉取游戏文件，和桌面版走同一条路线。";
+            font-size: 13px;
+            color: Theme.dim;
+            wrap: word-wrap;
+        }
+
+        SheetButton {
+            x: 18px;
+            y: 100px;
+            width: 132px;
+            height: 40px;
+            label: root.aria2-busy ? "下载中…" : "下载 aria2c";
+            clicked => {
+                root.install-requested();
+            }
+        }
+
+        Text {
+            x: 18px;
+            y: 150px;
+            width: root.width - Theme.gutter * 2 - 36px;
+            text: "官方 1.37.0 · arm64 · 约 2.4 MB";
+            font-size: 11px;
+            color: Theme.dim;
+        }
+
+        if root.aria2-busy || root.aria2-progress > 0 : Rectangle {
+            x: 18px;
+            y: 172px;
+            width: root.width - Theme.gutter * 2 - 36px;
+            height: 4px;
+            border-radius: 2px;
+            background: Theme.pressed;
+
+            Rectangle {
+                // Explicit x: a child that only declares a size is centred by
+                // Slint, which made the bar grow from the middle.
+                x: 0px;
+                y: 0px;
+                width: (root.width - Theme.gutter * 2 - 36px) * Math.min(1, Math.max(0, root.aria2-progress));
+                height: 4px;
+                border-radius: 2px;
+                background: Theme.accent;
+            }
+        }
+
+        if root.aria2-message != "" : Text {
+            x: 18px;
+            y: 186px;
+            width: root.width - Theme.gutter * 2 - 36px;
+            height: 56px;
+            text: root.aria2-message;
+            font-size: 12px;
+            color: Theme.dim;
+            wrap: word-wrap;
+        }
+    }
+
+    if root.aria2-installed : Text {
+        x: Theme.gutter;
+        y: root.top-inset + 96px;
+        width: root.width - Theme.gutter * 2;
+        text: "aria2c 已安装，版本列表接下来在这里出现。";
+        font-size: 13px;
+        color: Theme.dim;
+        wrap: word-wrap;
+    }
 }

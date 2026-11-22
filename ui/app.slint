@@ -26,6 +26,14 @@ export component AppWindow inherits Window {
     in-out property <Tab> tab: Tab.home;
     in-out property <Route> route: Route.tabs;
 
+    /// Device pixel ratio, set from Rust. A literal `1px` is more than one
+    /// device pixel on most phones and rasterises to one or two rows
+    /// depending on where it lands; `Theme.hairline` stays exactly one.
+    in-out property <float> scale-factor: 1.0;
+    changed scale-factor => {
+        Theme.scale-factor = root.scale-factor;
+    }
+
     /// Rows for the account screen. Rust rebuilds the whole model every time
     /// the screen opens, so the UI never reads the disk itself.
     in-out property <[AccountRow]> accounts;
@@ -50,6 +58,19 @@ export component AppWindow inherits Window {
     in-out property <bool> add-any: false;
     in-out property <string> add-error: "";
 
+    /// aria2c downloader state, pushed by Rust. The download tab asks for a
+    /// fresh check when it opens and swaps between the install prompt and the
+    /// real list.
+    in-out property <bool> aria2-installed: false;
+    in-out property <bool> aria2-busy: false;
+    in-out property <float> aria2-progress: 0;
+    in-out property <string> aria2-message: "";
+
+    /// Settings: the one desktop setting the phone front-end owns today.
+    in-out property <string> github-proxy: "";
+    in-out property <string> settings-status: "";
+    in-out property <bool> settings-status-error: false;
+
     callback accounts-requested;
     callback accounts-closed;
     callback account-activated(int);
@@ -62,6 +83,17 @@ export component AppWindow inherits Window {
     callback login-cancelled;
     callback login-open-url;
     callback login-copy-code;
+    callback download-opened;
+    callback aria2-install-requested;
+    callback github-proxy-saved(string);
+
+    // The download page never reads the disk itself: entering the tab is the
+    // moment to ask whether the downloader is installed.
+    changed tab => {
+        if (root.tab == Tab.download) {
+            root.download-opened();
+        }
+    }
 
     // ---- tabs ----
 
@@ -80,9 +112,22 @@ export component AppWindow inherits Window {
             }
             if root.tab == Tab.download : DownloadPage {
                 top-inset: root.safe-area-insets.top;
+                aria2-installed: root.aria2-installed;
+                aria2-busy: root.aria2-busy;
+                aria2-progress: root.aria2-progress;
+                aria2-message: root.aria2-message;
+                install-requested => {
+                    root.aria2-install-requested();
+                }
             }
             if root.tab == Tab.settings : SettingsPage {
                 top-inset: root.safe-area-insets.top;
+                github-proxy <=> root.github-proxy;
+                status: root.settings-status;
+                status-error: root.settings-status-error;
+                save-github-proxy(value) => {
+                    root.github-proxy-saved(value);
+                }
             }
         }
 

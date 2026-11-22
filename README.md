@@ -104,6 +104,12 @@ ZTE 7552N / Android 13 / 480×854：
 - **窗口尺寸不在 `.slint` 里写死。** 写在 `Window` 上的 `width/height` 在 Android
   上会变成一个比屏幕还高的窗口，底栏直接被挤到屏幕外——第一版就是这么翻车的。
   现在只有桌面入口调 `set_size()`。
+- **数据和实例都在 `/sdcard/Tessera`，启动即申请「所有文件访问权限」。** App 私有
+  目录之外的读写只有 Android 11+ 的 `MANAGE_EXTERNAL_STORAGE` 能覆盖。这是系统
+  设置里的开关，不是运行时弹窗，所以窗口拿到焦点后没有权限就跳转
+  `MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`；用户按返回仍没授权会再次跳转，授权后
+  留在应用里并立刻创建数据目录、重新读账户。见 `src/platform.rs` 与 `lib.rs`
+  里的权限轮询。
 
 ## 账户
 
@@ -114,15 +120,17 @@ ZTE 7552N / Android 13 / 480×854：
 - 长按 = 移除，走一张确认卡片（对应桌面版的「再点一次」）。
 - 右下「添加」二选一：**正版登录**（微软设备码）或**离线账户**（3–16 个
   `[A-Za-z0-9_]`，勾选后可任意）。
-- 当前账户记在 `<data>/active_account`，存的是文件名不是路径。
+- 当前账户记在 `/sdcard/Tessera/active_account`，存的是文件名不是路径。
 
-账户文件放在 `<data>/凭据/账户/`，格式与桌面版相同，可以直接拷过来。
+所有数据都在 **`/sdcard/Tessera`** 下，不使用应用私有目录（卸载重装不丢，也能通过
+USB 直接拷）。账户文件放在 `/sdcard/Tessera/凭据/账户/`，格式与桌面版相同；
+把桌面版的 `凭据/` 整个拷进去即可。
 
 ## 正版登录
 
 `vendor/minecraft-auth` 就是桌面版用的那份代码，这里只是换了个前端：
 
-1. 选身份：官方启动器、`凭据/启动器/azure_app_ids.toml` 里的第三方 app id，或者
+1. 选身份：官方启动器、`/sdcard/Tessera/凭据/启动器/azure_app_ids.toml` 里的第三方 app id，或者
    当场填一个 client id（「自定义 app id」）。
 2. 工作线程拿设备码，UI 每 150ms 轮询一次 channel，不阻塞绘制。
 3. 页面显示代码和地址，`复制代码` / `打开浏览器` 交给系统。
@@ -140,9 +148,33 @@ ZTE 7552N / Android 13 / 480×854：
 `打开浏览器` 和 `复制` 没有用 Slint——它的 Rust API 不暴露这两个能力——而是走
 JNI 调 `Intent` / `ClipboardManager`，见 `src/platform.rs`。
 
+## 下载器（aria2c）
+
+下载页和桌面版走同一条路线：`mdt-minecraft` 写 `aria2c --input-file` 列表，aria2
+搬字节。手机端第一件事是先有 aria2c：
+
+- 进入「下载」页时检查应用私有目录里的 `bin/aria2c`。没有就只显示安装卡片。
+- 点「下载 aria2c」会从 GitHub 拉官方 `1.37.0` 的 aarch64 Android 构建，边下边算
+  SHA-256，校验通过后解压出 `aria2c`、设为可执行，再跑一次 `--version` 确认。
+- **二进制放在应用私有目录**（`Context.getFilesDir()/bin`），因为 `/sdcard` 是
+  `noexec`；下载的游戏数据仍然在 `/sdcard/Tessera`。本项目 targetSdk 28，所以还允许
+  从私有目录执行。
+- 官方 Android 构建是 **API 33+**；更老的设备会通过校验但 `--version` 跑不起来，
+  这时会删掉二进制并报错，而不是留下一个坏文件。
+
+GitHub 下载统一走设置页的 GitHub Proxy：读写的还是桌面版那份
+`/sdcard/Tessera/配置.toml` 里的 `github_proxy`，保存时只改这一个键，桌面版写的其他
+字段原样保留。候选顺序和桌面版一致：`proxy/host/...`、`proxy/https://host/...`，
+最后直连。
+
+## 设置
+
+目前只放了 GitHub Proxy，和桌面版同一个文件、同一个键。
+
 ## 下一步
 
-- Microsoft 登录（`vendor/minecraft-auth` 已经放进来，还没接）：设备码流程比内嵌
-  浏览器更适合手机。
-- 账户页现在只在打开时读盘；等有了下载/安装，再按 `tessera-core` 的 `Effect`
+- 接版本列表和安装：把 `mdt-minecraft` 生成的 aria2 列表交给 `aria2c`。还要给
+  aria2 传 `--ca-certificate`（Android 没有 OpenSSL 默认 CA 路径），证书来源可以
+  和登录一样用内置 Mozilla 根证书。
+- 账户页现在只在打开时读盘；等有了安装流程，再按 `tessera-core` 的 `Effect`
   那套把后台任务接起来。

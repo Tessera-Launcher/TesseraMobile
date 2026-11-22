@@ -20,4 +20,14 @@ export global Theme {
     // Metrics
     out property <length> nav-height: 56px;
     out property <length> gutter: 20px;
+
+    /// Device pixel ratio, mirrored from the window.
+    in-out property <float> scale-factor: 1.0;
+    /// One device pixel. Slint lengths are logical, so a literal `1px` divider
+    /// is 1.33 px on a 480-wide phone and rasterises as one or two device
+    /// rows depending on where it lands — two otherwise identical separators
+    /// end up visibly different. Dividing by the scale keeps a hairline one
+    /// device pixel thick everywhere; the extra 0.001 keeps it from rounding
+    /// down to nothing.
+    out property <length> hairline: 1.001px / scale-factor;
 }

@@ -7,7 +7,13 @@
 //! activity is destroyed.
 
 use std::cell::RefCell;
+#[cfg(target_os = "android")]
+use std::cell::Cell;
+#[cfg(target_os = "android")]
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
@@ -15,13 +21,17 @@ use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 
 pub mod accounts;
 pub mod app_ids;
+pub mod aria2;
+pub mod http;
 pub mod login;
+pub mod settings;
 pub mod platform;
 pub mod state;
 
 slint::include_modules!();
 
 use login::{Event, Identity};
+use settings::Settings;
 use state::State;
 
 /// Show the window and run until it closes.
@@ -32,11 +42,31 @@ pub fn run() -> Result<(), slint::PlatformError> {
 /// Build the window, load the account list and wire the callbacks.
 pub fn create() -> Result<AppWindow, slint::PlatformError> {
     let ui = AppWindow::new()?;
+    // Android pins this in `android_main` from the activity's density. On the
+    // desktop the window's own scale factor is the fallback.
+    let scale = platform::scale_factor(ui.window().scale_factor());
+    ui.set_scale_factor(scale);
 
     let state = Rc::new(RefCell::new(State::new(platform::data_dir())));
+    // Fails silently while the storage permission is missing; the permission
+    // timer retries once it is granted.
+    let _ = state.borrow().ensure_root();
     let rows = Rc::new(VecModel::<AccountRow>::from(Vec::new()));
     ui.set_accounts(ModelRc::from(rows.clone()));
     reload_for(&ui, &state, &rows);
+
+    // `配置.toml` is shared with the desktop build; the phone only owns the
+    // GitHub proxy for now. A note means the file was unreadable or newer.
+    let (loaded, settings_note) = Settings::load(state.borrow().root());
+    let config = Rc::new(RefCell::new(loaded));
+    ui.set_github_proxy(config.borrow().github_proxy.clone().into());
+    if let Some(note) = settings_note {
+        ui.set_settings_status(note.into());
+        ui.set_settings_status_error(true);
+    }
+    ui.set_aria2_installed(aria2::installed().is_some());
+    // One install at a time, independent of what the UI property says.
+    let aria2_busy = Arc::new(AtomicBool::new(false));
 
     // The 账户 button on the home page: re-read the directory, then push the
     // screen. Files can change while the screen is closed.
@@ -282,6 +312,189 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     }
 
+    // The download tab opened: files can appear while it is closed, so ask
+    // again instead of trusting the value from startup.
+    {
+        let weak = ui.as_weak();
+        ui.on_download_opened(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_aria2_installed(aria2::installed().is_some());
+            }
+        });
+    }
+
+    // Install the pinned aria2c. The worker reports through the event loop, so
+    // no state is touched from the download thread.
+    {
+        let weak = ui.as_weak();
+        let config = config.clone();
+        let busy = aria2_busy.clone();
+        ui.on_aria2_install_requested(move || {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if busy.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            if !aria2::supported() {
+                busy.store(false, Ordering::SeqCst);
+                ui.set_aria2_message("当前平台没有固定构建（需要 Android arm64）".into());
+                return;
+            }
+            ui.set_aria2_busy(true);
+            ui.set_aria2_progress(0.0);
+            ui.set_aria2_message("正在获取 aria2c…".into());
+
+            let proxy = config.borrow().github_proxy.clone();
+            let weak = ui.as_weak();
+            let busy = busy.clone();
+            aria2::spawn_install(proxy, move |event| {
+                let weak = weak.clone();
+                let busy = busy.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = weak.upgrade() else {
+                        return;
+                    };
+                    match event {
+                        aria2::Event::Log(line) => {
+                            ui.set_aria2_message(line.into());
+                        }
+                        aria2::Event::Progress { done, total, speed } => {
+                            let fraction = if total == 0 {
+                                0.0
+                            } else {
+                                done as f32 / total as f32
+                            };
+                            ui.set_aria2_progress(fraction);
+                            let text = if speed > 1.0 {
+                                format!(
+                                    "下载 aria2c… {} / {} · {}/s",
+                                    http::human_size(done),
+                                    http::human_size(total),
+                                    http::human_size(speed as u64)
+                                )
+                            } else {
+                                format!(
+                                    "下载 aria2c… {} / {}",
+                                    http::human_size(done),
+                                    http::human_size(total)
+                                )
+                            };
+                            ui.set_aria2_message(text.into());
+                        }
+                        aria2::Event::Installed { version, .. } => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_aria2_busy(false);
+                            ui.set_aria2_installed(true);
+                            ui.set_aria2_progress(1.0);
+                            ui.set_aria2_message(format!("aria2c {version} 已安装").into());
+                        }
+                        aria2::Event::Failed(problem) => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_aria2_busy(false);
+                            ui.set_aria2_progress(0.0);
+                            ui.set_aria2_message(problem.into());
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    // Save the GitHub proxy into the shared `配置.toml`.
+    {
+        let weak = ui.as_weak();
+        let state = state.clone();
+        let config = config.clone();
+        ui.on_github_proxy_saved(move |value| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let value = value.trim().to_string();
+            let mut next = config.borrow().clone();
+            next.github_proxy = value.clone();
+            *config.borrow_mut() = next.clone();
+            ui.set_github_proxy(value.clone().into());
+
+            let root = state.borrow().root().to_path_buf();
+            match next.save(&root) {
+                Ok(()) => {
+                    ui.set_settings_status_error(false);
+                    ui.set_settings_status(
+                        if value.is_empty() {
+                            "已设为直连".to_string()
+                        } else {
+                            format!("已保存：{value}")
+                        }
+                        .into(),
+                    );
+                }
+                Err(error) => {
+                    ui.set_settings_status_error(true);
+                    ui.set_settings_status(format!("保存失败：{error}").into());
+                }
+            }
+        });
+    }
+
+    // Instances live under `/sdcard`, which Android 11+ only allows with the
+    // "all files access" special permission. Ask as soon as the window has
+    // focus, and ask again every time the user comes back without granting it:
+    // the system page is the only place that can grant it.
+    #[cfg(target_os = "android")]
+    {
+        let timer = Timer::default();
+        // Fast while the permission is missing; a slow re-check once it is
+        // granted, so revoking it in Settings is noticed too.
+        let granted = Rc::new(Cell::new(false));
+        let ticks = Rc::new(Cell::new(0u32));
+        let last_prompt = Rc::new(RefCell::new(None::<std::time::Instant>));
+        let weak_ui = ui.as_weak();
+        let timer_state = state.clone();
+        let timer_rows = rows.clone();
+        timer.start(TimerMode::Repeated, Duration::from_millis(500), move || {
+            let tick = ticks.get().wrapping_add(1);
+            ticks.set(tick);
+            if granted.get() && tick % 4 != 0 {
+                return;
+            }
+            if platform::all_files_access() {
+                if !granted.replace(true) {
+                    // The data root lives on `/sdcard`, so it could not be
+                    // created before this permission existed. Now it can, and
+                    // the account list can be read from it for the first time.
+                    let _ = timer_state.borrow().ensure_root();
+                    if let Some(ui) = weak_ui.upgrade() {
+                        reload_for(&ui, &timer_state, &timer_rows);
+                    }
+                }
+                return;
+            }
+            granted.set(false);
+            // While Settings is in front the user is deciding; re-opening it
+            // from under itself would make the page unreachable.
+            if !platform::window_focused() {
+                return;
+            }
+            // The activity can keep focus for a frame after `startActivity`,
+            // so a cooldown stops a second page from being stacked on it.
+            let now = std::time::Instant::now();
+            {
+                let mut last = last_prompt.borrow_mut();
+                if last.is_some_and(|at| now.duration_since(at) < Duration::from_millis(1200)) {
+                    return;
+                }
+                *last = Some(now);
+            }
+            if let Err(problem) = platform::request_all_files_access() {
+                eprintln!("无法打开「所有文件访问权限」设置：{problem}");
+            }
+        });
+        // The timer has to outlive `create`; the window is the only owner it
+        // could have, so let the process keep it.
+        std::mem::forget(timer);
+    }
+
     Ok(ui)
 }
 
@@ -324,9 +537,24 @@ fn refresh(ui: &AppWindow, state: &Rc<RefCell<State>>, rows: &Rc<VecModel<Accoun
 #[cfg(target_os = "android")]
 #[no_mangle]
 fn android_main(app: slint::android::AndroidApp) {
-    // The app's private storage. Everything the launcher owns lives below it.
+    // `ndk_context` only carries the Application, so keep the activity from
+    // `android-activity` for the calls that need it (window focus).
+    platform::set_activity(app.activity_as_ptr());
+    // Executables (aria2c) cannot run from `/sdcard`; keep them in the app's
+    // private files directory, separate from the shared data root.
     if let Some(dir) = app.internal_data_path() {
-        platform::set_data_dir(dir);
+        platform::set_private_dir(dir);
+    }
+    // Everything the launcher owns lives on shared storage, next to the
+    // instances, so it survives reinstalls and is reachable over USB. Android
+    // reports the per-user volume; `/sdcard` is the conventional fallback.
+    let root = platform::external_storage_root().unwrap_or_else(|| PathBuf::from("/sdcard"));
+    platform::set_data_dir(root.join("Tessera"));
+    // Same mapping Slint's Android backend uses (dpi / 160). Read before
+    // `init` consumes the app; the window's own value is not ready until the
+    // native window is.
+    if let Some(dpi) = app.config().density() {
+        platform::set_scale_factor(dpi as f32 / 160.0);
     }
     slint::android::init(app).expect("slint android backend must start");
     run().expect("window must run");
