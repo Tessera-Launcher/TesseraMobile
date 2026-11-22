@@ -211,14 +211,13 @@ Fold Craft Launcher 的做法：不用 Mojang 的 LWJGL，整套换成 FCL 的 A
 - 从 `https://github.com/FCL-Team/FoldCraftLauncher/raw/<commit>/...` 取：
   - `FCL/libs/lwjgl-3.4.1-natives-release.aar`（解出 `natives/arm64-v8a/*.so`）
   - `FCL/libs/openal-soft-release.aar`、`FCL/libs/SDL-release.aar`（解出 `jni/arm64-v8a/*.so`）
-  - `FCL/libs/MobileGlues-release.aar`（解出 `jni/arm64-v8a/libmobileglues.so`，FCL 内置 2.0.1）
   - `FCL/src/main/assets/app_runtime/lwjgl/3.4.1/*.jar`（13 个 Java 模块）
   - 7 个 JNA 版本的 `libjnidispatch.so`
 - 每个文件都带 SHA-256，由 aria2c 下载、校验、解压到应用私有
   `files/runtime/{lwjgl/3.4.1,native/arm64-v8a,jna/<version>}`，不写 `/sdcard`。
 - URL 用 `github.com/.../raw/...` 而不是 `raw.githubusercontent.com`，这样
   gh-proxy 的 `github.com/...` 前缀规则都能用。
-- 下载约 46 MB，装好约 36 MB。其他渲染器 AAR（GL4ES/Zink）暂不下载。
+- 下载约 46 MB，装好约 36 MB。Tessera Mobile 不下载任何 GL 渲染器。
 
 启动参数还没接，但目标形态是 FCL 那一套：`-Dos.name=Linux`、
 `-Dorg.lwjgl.librarypath=<private>/runtime/lwjgl/3.4.1/natives/arm64-v8a`、
@@ -226,14 +225,12 @@ Fold Craft Launcher 的做法：不用 Mojang 的 LWJGL，整套换成 FCL 的 A
 `-Djna.boot.library.path=<private>/runtime/jna/<version>`，以及把
 `java.library.path` 指到这些私有目录和 `/system/lib64`、`/vendor/lib64`。
 
-MobileGlues 按 FCL 的接法：`-Dorg.lwjgl.opengl.libname=libmobileglues.so`、
-`-Dorg.lwjgl.egl.libname=libmobileglues.so`，环境变量
-`POJAV_RENDERER=opengles3_mobileglues`、`LIBGL_ES=3`、`LIBGL_EGL=libmobileglues.so`、
-`POJAVEXEC_EGL=libmobileglues.so`、`MG_DIR_PATH=<private>/mobileglues`。
+Tessera Mobile 只走 Vulkan：不设置任何 OpenGL/EGL 库或 `POJAV_RENDERER`，
+并通过客户端 jar 补丁让 RenderPearl 只返回 Vulkan 后端，彻底去掉 OpenGL 回退。
 
 ## 版本列表
 
-aria2c、JRE、运行库（含 MobileGlues）三项都装好后，下载页从依赖卡片切换到版本列表：
+aria2c、JRE、运行库三项都装好后，下载页从依赖卡片切换到版本列表：
 
 - 版本索引来自 `vendor/mdt-minecraft`，先走 BMCLAPI，失败自动回落 Mojang。
 - MDT 默认会构造自己的 reqwest client；Android 上那条路会走
@@ -310,11 +307,11 @@ FCL 的 `libpojavexec`/`libfcl`/`libbytehook`/`libandroidnsbypass` 与 SDL 二�
 - SDL3 的 `nativeSetupJNI()`、`surfaceCreated()`、`surfaceChanged()`；
 - SDL 初始化不再报 `did you include SDL_main.h`；
 - Fabric 0.20.1 + Minecraft 26.3 进入 Render thread；
-- 设置 `SDL_OPENGL_LIBRARY` / `SDL_EGL_LIBRARY` 指向 MobileGlues 后，
-  `glGetError mismatch` 已消失，SDL 创建窗口成功；
-- Minecraft 26.3 的 OIT shader 用非常量下标写 fragment output 数组，
-  Mali GLSL 编译器报 `S0015`；`scripts/patch-oit-shader.sh` 会把两个
-  attachment 展开成常量写入，真机已经能进入标题画面。
+- 强制走 Vulkan，Pixel 7 上确认 `Using graphics backend Vulkan`，
+  `Window size: 2264x1080`，标题画面正常渲染；
+- MobileGlues 已从运行库、启动参数和 UI 中移除；
+- Minecraft 26.3 的 OIT shader 仍用 `scripts/patch-oit-shader.sh` 展开数组，
+  以兼容 Android 的 GLSL 编译器。
 
 ## 下一步
 
