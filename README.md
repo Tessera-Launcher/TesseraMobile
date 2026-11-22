@@ -312,9 +312,9 @@ FCL 的 `libpojavexec`/`libfcl`/`libbytehook`/`libandroidnsbypass` 与 SDL 二�
 - Fabric 0.20.1 + Minecraft 26.3 进入 Render thread；
 - 设置 `SDL_OPENGL_LIBRARY` / `SDL_EGL_LIBRARY` 指向 MobileGlues 后，
   `glGetError mismatch` 已消失，SDL 创建窗口成功；
-- 当前黑屏原因推进到 Minecraft 26.3 的 shader 编译：
-  `S0015: Outputs declared as arrays may only be indexed by a constant integral expression`，
-  需要继续处理 MobileGlues/SFPEW 的 GLSL 翻译。
+- Minecraft 26.3 的 OIT shader 用非常量下标写 fragment output 数组，
+  Mali GLSL 编译器报 `S0015`；`scripts/patch-oit-shader.sh` 会把两个
+  attachment 展开成常量写入，真机已经能进入标题画面。
 
 ## 下一步
 
