@@ -19,9 +19,7 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
     private TextureView view;
     private FrameLayout root;
     private boolean started;
-    private float lastTouchX;
-    private float lastTouchY;
-    private boolean touchDown;
+    private boolean menuPointerDown;
 
     static {
         // NativeActivity loaded this too, but binding the library to the class
@@ -50,11 +48,11 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         view = new TextureView(this);
         view.setSurfaceTextureListener(this);
         // The SDLSurface created by SdlBridge is not in the view hierarchy, so
-        // its touch listener never runs.  Feed the visible TextureView through
-        // FCL's bridge instead of raw SDL touch events: Minecraft 26.x reads
-        // SDL mouse events, and the bridge also drives the GLFW path.
+        // its touch listener never runs.  Feed the visible TextureView's raw
+        // finger stream into SDL; TouchController handles the SDL finger
+        // events in 26.3, while its own mouse synthesis still serves menus.
         view.setOnTouchListener((v, event) -> {
-            handleTouch(event);
+            handleTouch(event, v.getWidth(), v.getHeight());
             return true;
         });
         root.addView(view, new FrameLayout.LayoutParams(
@@ -62,49 +60,33 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         setContentView(root);
     }
 
+
     /**
-     * Minimal FCL-style touch controller.
-     *
-     * <p>In menu/cursor mode a finger is an absolute virtual mouse: move, then
-     * a tap is one left click.  Once the game grabs the pointer, the same
-     * finger drag becomes a relative look delta.  On-screen movement/action
-     * buttons are the next layer; they will reuse the same bridge.</p>
+     * TouchController owns the SDL finger stream.  Minecraft's menus do not
+     * have TouchController widgets, so keep the old absolute mouse path for
+     * non-grabbed screens as a menu pointer; in-world touches stay finger-only.
      */
-    private void handleTouch(MotionEvent event) {
-        int action = event.getActionMasked();
-        float x = event.getX();
-        float y = event.getY();
+    private void handleTouch(MotionEvent event, int width, int height) {
+        TesseraSdl.sendTouch(event, width, height);
         boolean grabbing = org.lwjgl.glfw.CallbackBridge.isGrabbing();
-        switch (action) {
+        // launch.rs starts the game with an 854x480 logical window; the
+        // TextureView is the physical 2264x1080 surface.
+        float x = event.getX() * 854f / width;
+        float y = event.getY() * 480f / height;
+        switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                lastTouchX = x;
-                lastTouchY = y;
-                if (grabbing) {
-                    touchDown = false;
-                } else {
-                    org.lwjgl.glfw.CallbackBridge.sendCursorPos(x, y);
-                    org.lwjgl.glfw.CallbackBridge.sendMouseButton(0, true);
-                    touchDown = true;
-                }
+                org.lwjgl.glfw.CallbackBridge.sendCursorPos(x, y);
+                org.lwjgl.glfw.CallbackBridge.sendMouseButton(0, true);
+                menuPointerDown = true;
                 break;
             case MotionEvent.ACTION_MOVE:
-                if (grabbing) {
-                    float dx = x - lastTouchX;
-                    float dy = y - lastTouchY;
-                    if (dx != 0f || dy != 0f) {
-                        org.lwjgl.glfw.CallbackBridge.sendCursorDelta(dx, dy);
-                    }
-                } else {
-                    org.lwjgl.glfw.CallbackBridge.sendCursorPos(x, y);
-                }
-                lastTouchX = x;
-                lastTouchY = y;
+                org.lwjgl.glfw.CallbackBridge.sendCursorPos(x, y);
                 break;
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_UP:
-                if (touchDown) {
+                if (menuPointerDown) {
                     org.lwjgl.glfw.CallbackBridge.sendMouseButton(0, false);
-                    touchDown = false;
+                    menuPointerDown = false;
                 }
                 break;
             default:

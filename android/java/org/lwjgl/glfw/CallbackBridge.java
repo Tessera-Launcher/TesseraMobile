@@ -2,7 +2,6 @@ package org.lwjgl.glfw;
 
 import android.view.MotionEvent;
 
-import dalvik.annotation.optimization.CriticalNative;
 import com.tungsten.fcl.game.sdl.SdlBridge;
 import org.tessera.mobile.TesseraSdl;
 
@@ -43,27 +42,17 @@ public final class CallbackBridge {
 
     private CallbackBridge() {}
 
-    // libpojavexec registers these through RegisterNatives with the
-    // @CriticalNative calling convention.  Without the annotation ART calls
-    // them as ordinary JNI functions (extra JNIEnv*/jclass arguments), which
-    // is why the first touch-forwarding attempt silently did nothing.
-    @CriticalNative
+    // libpojavexec registers these through RegisterNatives.  It logs
+    // "CriticalNative is not available" on current GrapheneOS, so they are
+    // ordinary JNI entry points here.
     public static native void nativeSetUseInputStackQueue(boolean use);
-    @CriticalNative
     private static native boolean nativeSendChar(char ch);
-    @CriticalNative
     private static native boolean nativeSendCharMods(char ch, int mods);
-    @CriticalNative
     private static native void nativeSendKey(int key, int scancode, int action, int mods);
-    @CriticalNative
     private static native void nativeSendCursorPos(float x, float y);
-    @CriticalNative
     private static native void nativeSendMouseButton(int button, int action, int mods);
-    @CriticalNative
     private static native void nativeResetInputState();
-    @CriticalNative
     private static native void nativeSendScroll(double x, double y);
-    @CriticalNative
     private static native void nativeSendScreenSize(int width, int height);
     public static native void nativeSetWindowAttrib(int attrib, int value);
     public static native void setupBridgeWindow(Object surface);
@@ -134,7 +123,6 @@ public final class CallbackBridge {
         deltaX = dx;
         deltaY = dy;
         nativeSendCursorPos(x, y);
-        if (!SdlBridge.getSdlEnabled()) return;
         if (isGrabbing) {
             org.libsdl.app.SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, dx, dy, true);
         } else {
@@ -150,9 +138,7 @@ public final class CallbackBridge {
         mouseX += x;
         mouseY += y;
         nativeSendCursorPos(mouseX, mouseY);
-        if (SdlBridge.getSdlEnabled()) {
-            org.libsdl.app.SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, true);
-        }
+        org.libsdl.app.SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, true);
     }
 
     /** GLFW button index: 0 left, 1 right, 2 middle. */
@@ -163,7 +149,7 @@ public final class CallbackBridge {
         else if (button == GLFW_MOUSE_MIDDLE) sdlButton = MotionEvent.BUTTON_TERTIARY;
 
         nativeSendMouseButton(button, down ? 1 : 0, 0);
-        if (!SdlBridge.getSdlEnabled() || sdlButton == 0) return;
+        if (sdlButton == 0) return;
 
         if (down) sMouseButtonState |= sdlButton;
         else sMouseButtonState &= ~sdlButton;
