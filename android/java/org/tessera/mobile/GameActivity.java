@@ -1,10 +1,6 @@
 package org.tessera.mobile;
 
 import android.app.Activity;
-import android.app.AlarmManager;
-import android.app.PendingIntent;
-import android.content.Context;
-import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.SurfaceTexture;
@@ -25,8 +21,6 @@ import android.widget.LinearLayout;
 
 /** Full-screen game host. Slint stays in the launcher's NativeActivity. */
 public final class GameActivity extends Activity implements TextureView.SurfaceTextureListener {
-    private static final int RESTART_REQUEST = 0x544553;
-    private static GameActivity current;
     private TextureView view;
     private FrameLayout root;
     private boolean started;
@@ -38,13 +32,11 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         System.loadLibrary("tessera_mobile");
     }
 
-    public static native void nativeStartGame(String version);
+    public native void nativeStartGame(String version);
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        current = this;
-        cancelPendingRestart(this);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(
@@ -218,7 +210,6 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         org.lwjgl.glfw.CallbackBridge.windowHeight = height;
         String version = getIntent().getStringExtra("version");
         if (version == null) version = "";
-        cancelPendingRestart(this);
         nativeStartGame(version);
     }
 
@@ -239,62 +230,6 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
     public void onSurfaceTextureUpdated(SurfaceTexture texture) {
     }
 
-    @Override
-    protected void onDestroy() {
-        if (current == this) current = null;
-        super.onDestroy();
-    }
-
-    /** Called by Rust when the game thread returns or startup fails.
-     *
-     * HotSpot can create only one JVM per process, so this process cannot
-     * launch Minecraft again.  Schedule a fresh launcher process, then kill
-     * this one; FCL does the same process reset after a game exits.
-     */
-    public static void gameExited() {
-        GameActivity activity = current;
-        if (activity == null) return;
-        activity.runOnUiThread(activity::restartLauncher);
-    }
-
-    private void restartLauncher() {
-        PendingIntent pending = restartPending(this);
-        if (pending == null) {
-            finish();
-            return;
-        }
-        AlarmManager alarms = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        alarms.set(AlarmManager.RTC, System.currentTimeMillis() + 1500L, pending);
-        android.os.Process.killProcess(android.os.Process.myPid());
-    }
-
-    /** The same PendingIntent is used to schedule and cancel the relaunch. */
-    private static PendingIntent restartPending(Context context) {
-        Intent launch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-        if (launch == null) return null;
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-        return PendingIntent.getActivity(
-                context,
-                RESTART_REQUEST,
-                launch,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-    }
-
-    /**
-     * Drop a relaunch alarm left by the previous process.
-     *
-     * Without this, a game started quickly after the process restart can be
-     * interrupted by the old alarm: it brings NativeActivity to the front and
-     * rotates/destroys the game Surface, so SDL_GetWindowFromID() fails and
-     * Minecraft dies with "Could not fetch native window".
-     */
-    public static void cancelPendingRestart(Context context) {
-        PendingIntent pending = restartPending(context);
-        if (pending == null) return;
-        AlarmManager alarms = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        alarms.cancel(pending);
-        pending.cancel();
-    }
 
     // SDL's native messagebox helper resolves this on GameActivity, not on
     // SDLActivity. The game only uses it for startup errors.

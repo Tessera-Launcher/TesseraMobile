@@ -1156,14 +1156,19 @@ fn refresh(ui: &AppWindow, state: &Rc<RefCell<State>>, rows: &Rc<VecModel<Accoun
 #[no_mangle]
 pub extern "system" fn Java_org_tessera_mobile_GameActivity_nativeStartGame(
     mut env: jni::JNIEnv,
-    _class: jni::objects::JObject,
+    activity: jni::objects::JObject,
     version: jni::objects::JString,
 ) {
+    // GameActivity runs in its own :game process, so the launcher's
+    // `android_main` has not populated these OnceLocks in this process.
+    init_game_paths(&mut env, &activity);
     let Ok(version) = env.get_string(&version) else {
         return;
     };
     let dir: String = version.into();
     let log = platform::private_dir().join("game-launch.log");
+    let vm = env.get_java_vm().ok();
+    let activity = env.new_global_ref(&activity).ok();
     launch::spawn(dir, None, move |event| {
         use std::io::Write;
         let finished = matches!(
@@ -1177,14 +1182,61 @@ pub extern "system" fn Java_org_tessera_mobile_GameActivity_nativeStartGame(
         {
             let _ = writeln!(file, "{event:?}");
         }
-        // The game runs inside GameActivity. When main returns (or startup
-        // fails), restart the app process: HotSpot cannot create a second JVM,
-        // so staying in this process would make the next launch fail. The
-        // relaunched process opens the launcher's home page.
+        // GameActivity is isolated in :game. Finish the Activity before
+        // exiting the process, otherwise Android reports the process death as
+        // an application crash. The launcher's NativeActivity is in the main
+        // process and resumes underneath.
         if finished {
-            let _ = platform::restart_launcher();
+            if let (Some(vm), Some(activity)) = (vm.as_ref(), activity.as_ref()) {
+                if let Ok(mut env) = vm.attach_current_thread() {
+                    let _ = env.call_method(activity.as_obj(), "finish", "()V", &[]);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            // Do not call exit(): libfcl installs an exit hook that aborts
+            // because this process is not the FCL launcher. _exit skips it.
+            unsafe { libc::_exit(0) };
         }
     });
+}
+
+/// Fill in the paths that `launch::prepare` reads, for the :game process.
+#[cfg(target_os = "android")]
+fn init_game_paths(env: &mut jni::JNIEnv, activity: &jni::objects::JObject) {
+    use jni::objects::JString;
+
+    let path_of =
+        |env: &mut jni::JNIEnv, file: jni::objects::JObject| -> Option<std::path::PathBuf> {
+            let value = env
+                .call_method(&file, "getAbsolutePath", "()Ljava/lang/String;", &[])
+                .ok()?
+                .l()
+                .ok()?;
+            let value: String = env.get_string(&JString::from(value)).ok()?.into();
+            Some(std::path::PathBuf::from(value))
+        };
+
+    if let Ok(files) = env
+        .call_method(activity, "getFilesDir", "()Ljava/io/File;", &[])
+        .and_then(|value| value.l())
+    {
+        if let Some(path) = path_of(env, files) {
+            platform::set_private_dir(path);
+        }
+    }
+    if let Ok(storage) = env
+        .call_static_method(
+            "android/os/Environment",
+            "getExternalStorageDirectory",
+            "()Ljava/io/File;",
+            &[],
+        )
+        .and_then(|value| value.l())
+    {
+        if let Some(path) = path_of(env, storage) {
+            platform::set_data_dir(path.join("Tessera"));
+        }
+    }
 }
 
 #[cfg(target_os = "android")]
@@ -1193,7 +1245,6 @@ fn android_main(app: slint::android::AndroidApp) {
     // `ndk_context` only carries the Application, so keep the activity from
     // `android-activity` for the calls that need it (window focus).
     platform::set_activity(app.activity_as_ptr());
-    let _ = platform::cancel_restart();
     // Executables (aria2c) cannot run from `/sdcard`; keep them in the app's
     // private files directory, separate from the shared data root.
     if let Some(dir) = app.internal_data_path() {

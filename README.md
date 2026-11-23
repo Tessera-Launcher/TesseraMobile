@@ -309,7 +309,8 @@ Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 
 ## 启动（实验）
 
-主页点一行会打开全屏 Java `GameActivity`，Surface 就绪后 JVM 用 JvmTest 的路线在当前进程里启动：
+主页点一行会打开全屏 Java `GameActivity`。它运行在独立的 `:game` 进程里，
+Surface 就绪后 JVM 用 JvmTest 的路线在这个游戏进程中启动：
 
 - 绝对路径预加载 `libc++_shared.so` / JRE 库 / `libjvm.so`；
 - `JNI_CreateJavaVM` 在新线程上创建 VM；
@@ -317,8 +318,14 @@ Fold Craft Launcher，以及 LWJGL/SDL/OpenAL 的许可证。
 - 自动补 `java.compiler`（safe JRE 没有）和 FCL `CallbackBridge` 兼容类；
 - 日志写到 `files/game.log`。
 
-SDL 现在由一个独立的 Java `GameActivity` 承载：它创建 `TextureView`，在
-ART VM 里先加载 `libpojavexec.so` 并安装 FCL 的 SDL hook，再把 Surface 交给
+`GameActivity` 在清单里固定为 `android:process=":game"`。游戏 `main` 返回或启动
+失败时，它先 `finish()`，再用 `_exit(0)` 只结束 `:game` 进程；启动器所在的
+NativeActivity 进程不受影响，Android 直接恢复主页，因此下一次点版本会得到一个
+全新的游戏进程和全新的 JVM。不要改成 `exit()`：`libfcl` 安装的退出钩子会在
+非 FCL 启动器进程里触发空指针/abort。
+
+SDL 现在由这个 Java `GameActivity` 承载：它创建 `TextureView`，在 ART VM 里先加载
+`libpojavexec.so` 并安装 FCL 的 SDL hook，再把 Surface 交给
 `SDLActivity`/`SDLSurface`；Rust 侧只负责 Surface 就绪后启动 JVM，并在游戏线程调用
 `SDL_SetMainReady`。SDL 的 Java 宿主和 `CallbackBridge` 在 `android/java/`，
 FCL 的 `libpojavexec`/`libfcl`/`libbytehook`/`libandroidnsbypass` 与 SDL 二进制在

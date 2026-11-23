@@ -75,6 +75,10 @@ apk_name = "tessera"
 # Surface owner, while all launcher/game logic stays in Rust.
 java_sources = "android/java"
 runtime_libs = "android/jniLibs"
+# cargo-apk2's Activity metadata has no android:process field. The manifest
+# puts GameActivity in :game so the launcher process survives the JVM/game
+# process being killed after main() returns.
+manifest_override = "android/AndroidManifest.xml"
 
 [package.metadata.android.sdk]
 min_sdk_version = 28
