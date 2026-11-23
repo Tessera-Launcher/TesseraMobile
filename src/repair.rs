@@ -264,7 +264,7 @@ async fn plan_for_installed(
         .build()
         .map_err(|error| format!("无法初始化下载器：{error}"))?;
 
-    let mut plan = if let Some(loader_version) = fabric_version {
+    let plan = if let Some(loader_version) = fabric_version {
         report(Event::Log(format!(
             "修复：解析 Fabric Loader {loader_version}"
         )));

@@ -6,7 +6,7 @@
 
 import { Theme } from "theme.slint";
 import { ListView } from "std-widgets.slint";
-import { Page, HeaderButton } from "page.slint";
+import { Page, HeaderButton, SheetButton } from "page.slint";
 
 export struct InstalledRow {
     label: string,
@@ -18,7 +18,12 @@ component InstalledRowView inherits Rectangle {
     in property <InstalledRow> item;
     callback uninstall(string);
     callback launch(string);
-    callback repair(string);
+    callback actions(string);
+
+    // Android's built-in context-menu long press is not reliable inside this
+    // ListView. Detect the hold ourselves and open the same menu explicitly.
+    property <bool> hold-moved: false;
+    property <bool> hold-opened: false;
 
     height: 54px;
     background: touch.pressed ? Theme.pressed : transparent;
@@ -51,26 +56,32 @@ component InstalledRowView inherits Rectangle {
     // Long press on Android (right click on desktop) opens this menu. The
     // ContextMenuArea expands to the whole row. The TouchArea is a visual child
     // so a short tap still reaches the launch callback.
-    ContextMenuArea {
-        Menu {
-            MenuItem {
-                title: "修复游戏…";
-                activated => {
-                    root.repair(root.item.key);
-                }
-            }
-            MenuItem {
-                title: "卸载";
-                activated => {
-                    root.uninstall(root.item.key);
-                }
+    touch := TouchArea {
+        changed pressed => {
+            if (touch.pressed) {
+                root.hold-moved = false;
+                root.hold-opened = false;
             }
         }
-
-        touch := TouchArea {
-            clicked => {
+        moved => {
+            if (Math.abs(touch.mouse-x - touch.pressed-x) > 10px
+                || Math.abs(touch.mouse-y - touch.pressed-y) > 10px) {
+                root.hold-moved = true;
+            }
+        }
+        clicked => {
+            if (!root.hold-opened) {
                 root.launch(root.item.key);
             }
+        }
+    }
+
+    hold := Timer {
+        interval: 650ms;
+        running: touch.pressed && !root.hold-moved && !root.hold-opened;
+        triggered => {
+            root.hold-opened = true;
+            root.actions(root.item.key);
         }
     }
 }
@@ -80,6 +91,7 @@ export component HomePage inherits Page {
 
     in property <[InstalledRow]> installed;
     in property <int> installed-count: 0;
+    property <string> action-key: "";
 
     callback accounts-requested;
     callback uninstall-version(string);
@@ -132,8 +144,79 @@ export component HomePage inherits Page {
                 launch(key) => {
                     root.launch-requested(key);
                 }
-                repair(key) => {
-                    root.repair-version(key);
+                actions(key) => {
+                    root.action-key = key;
+                }
+            }
+        }
+    }
+
+
+    // A plain in-app sheet instead of the platform context menu: on Android
+    // ContextMenuArea's long press is unreliable inside this ListView.
+    if root.action-key != "" : Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: #000000aa;
+
+        TouchArea {
+            clicked => {
+                root.action-key = "";
+            }
+        }
+
+        Rectangle {
+            x: Theme.gutter;
+            y: root.height - self.height - 24px;
+            width: root.width - Theme.gutter * 2;
+            height: 190px;
+            border-radius: 14px;
+            background: Theme.bar;
+            border-width: 1px;
+            border-color: Theme.line;
+
+            Text {
+                x: 18px;
+                y: 14px;
+                width: parent.width - 36px;
+                text: root.action-key;
+                font-size: 14px;
+                font-weight: 600;
+                color: Theme.text;
+                overflow: elide;
+            }
+
+            VerticalLayout {
+                x: 18px;
+                y: 44px;
+                width: parent.width - 36px;
+                spacing: 8px;
+
+                SheetButton {
+                    width: 100%;
+                    label: "修复游戏…";
+                    clicked => {
+                        root.repair-version(root.action-key);
+                        root.action-key = "";
+                    }
+                }
+                SheetButton {
+                    width: 100%;
+                    label: "卸载";
+                    danger: true;
+                    clicked => {
+                        root.uninstall-version(root.action-key);
+                        root.action-key = "";
+                    }
+                }
+                SheetButton {
+                    width: 100%;
+                    label: "取消";
+                    clicked => {
+                        root.action-key = "";
+                    }
                 }
             }
         }
