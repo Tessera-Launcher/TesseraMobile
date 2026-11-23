@@ -283,7 +283,7 @@ aria2c、JRE、运行库三项都装好后，下载页从依赖卡片切换到�
     aria2 清单；TouchController 或必需依赖解析失败会让安装失败，避免装出无法操作的实例；
   - API 和触摸模组 jar 都写进 `versions/<id>/mods/`；API 解析失败只记日志，不放弃 Loader。
 - aria2c 的参数照桌面版抄：`-j16 -x1 -s1`、`--console-log-level=notice`、
-  `--show-console-readout=false`、`--summary-interval=0`、`--max-tries=3`、
+  `--show-console-readout=false`、`--summary-interval=0`、`--max-tries=20`、
   `--stop-with-process`，Android 额外传 `--ca-certificate`。
 - 安装页只有一个活动日志框：aria2 每完成一个文件就追加一行，只保留最近 12 行，
   持续刷新。没有进度条，也不解析 `[#gid]` 或走 JSON-RPC。
