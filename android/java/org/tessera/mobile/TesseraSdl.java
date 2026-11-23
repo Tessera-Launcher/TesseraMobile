@@ -75,6 +75,9 @@ public final class TesseraSdl {
 
     public static void prepareSurface(Activity activity, Surface surface, ViewGroup layout) {
         SdlBridge.prepareSurface(activity, surface, layout, activity);
+        // The game VM's SDL_Init hook does not necessarily reach this app-side
+        // CallbackBridge, so enable the SDL mouse path explicitly for the host.
+        SdlBridge.setSdlEnabled(true);
     }
 
     public static void syncResolution(int width, int height) {

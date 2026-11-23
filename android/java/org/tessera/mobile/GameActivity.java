@@ -19,6 +19,7 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
     private TextureView view;
     private FrameLayout root;
     private boolean started;
+    private boolean menuPointerDown;
 
     static {
         // NativeActivity loaded this too, but binding the library to the class
@@ -60,9 +61,44 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
     }
 
 
-    /** Tessera is touch-only; TouchController owns the game-side input. */
+    /**
+     * TouchController owns the SDL finger stream.  Minecraft's menus do not
+     * have TouchController widgets, so keep the old absolute mouse path for
+     * non-grabbed screens as a menu pointer; in-world touches stay finger-only.
+     */
     private void handleTouch(MotionEvent event, int width, int height) {
         TesseraSdl.sendTouch(event, width, height);
+        // Once Minecraft has grabbed the pointer, TouchController owns the
+        // finger stream.  Do not also inject an absolute mouse button: a held
+        // fallback button from the forward widget would keep attacking and
+        // prevent the look gesture from taking effect.
+        if (org.lwjgl.glfw.CallbackBridge.isGrabbing()) {
+            menuPointerDown = false;
+            return;
+        }
+        // launch.rs starts the game with an 854x480 logical window; the
+        // TextureView is the physical 2264x1080 surface.
+        float x = event.getX() * 854f / width;
+        float y = event.getY() * 480f / height;
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                org.lwjgl.glfw.CallbackBridge.sendCursorPos(x, y);
+                org.lwjgl.glfw.CallbackBridge.sendMouseButton(0, true);
+                menuPointerDown = true;
+                break;
+            case MotionEvent.ACTION_MOVE:
+                org.lwjgl.glfw.CallbackBridge.sendCursorPos(x, y);
+                break;
+            case MotionEvent.ACTION_CANCEL:
+            case MotionEvent.ACTION_UP:
+                if (menuPointerDown) {
+                    org.lwjgl.glfw.CallbackBridge.sendMouseButton(0, false);
+                    menuPointerDown = false;
+                }
+                break;
+            default:
+                break;
+        }
     }
 
     @Override

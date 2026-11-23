@@ -1,5 +1,7 @@
 package org.lwjgl.glfw;
 
+import android.view.MotionEvent;
+
 import com.tungsten.fcl.game.sdl.SdlBridge;
 import org.tessera.mobile.TesseraSdl;
 
@@ -24,6 +26,15 @@ public final class CallbackBridge {
     public static volatile boolean holdingNumlock;
     public static volatile boolean holdingShift;
     public static boolean sGamepadDirectInput;
+
+    /** Game cursor mode: true while the game owns the pointer (in-world look). */
+    private static volatile boolean isGrabbing;
+    /** SDL mouse button mask (MotionEvent.BUTTON_*), not GLFW button index. */
+    private static int sMouseButtonState;
+
+    private static final int GLFW_MOUSE_LEFT = 0;
+    private static final int GLFW_MOUSE_RIGHT = 1;
+    private static final int GLFW_MOUSE_MIDDLE = 2;
 
     public static final int NOTIF_TYPE_SDL = 0;
     public static final int ACTION_INIT_LAUNCHER_INTEGRATION = 0;
@@ -82,11 +93,79 @@ public final class CallbackBridge {
     public static String accessAndroidClipboard(int type, String text) { return null; }
 
     /**
-     * libpojavexec calls this when the game changes cursor mode.  Tessera is
-     * touch-only: the state is deliberately not translated into a synthetic
-     * mouse; TouchController owns all touch-to-game input.
+     * Called by libpojavexec on the Android UI thread when the game changes
+     * cursor mode.  In-world (grabbed) touches become relative look deltas;
+     * menus (not grabbed) use an absolute virtual cursor.
      */
-    public static void onGrabStateChanged(boolean grabbing) {}
+    public static void onGrabStateChanged(boolean grabbing) {
+        isGrabbing = grabbing;
+        deltaX = 0f;
+        deltaY = 0f;
+    }
 
     public static void onDirectInputEnable() {}
+
+    public static boolean isGrabbing() {
+        return isGrabbing;
+    }
+
+    /**
+     * Move the virtual pointer.  Cursor mode sends absolute window pixels;
+     * grabbed mode sends the same position to GLFW and a relative delta to
+     * SDL, because SDL's Android mouse backend treats absolute motion while
+     * grabbed as a mouse jump.
+     */
+    public static void sendCursorPos(float x, float y) {
+        float dx = x - mouseX;
+        float dy = y - mouseY;
+        mouseX = x;
+        mouseY = y;
+        deltaX = dx;
+        deltaY = dy;
+        nativeSendCursorPos(x, y);
+        if (isGrabbing) {
+            org.libsdl.app.SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, dx, dy, true);
+        } else {
+            org.libsdl.app.SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE,
+                    clampX(x), clampY(y), false);
+        }
+    }
+
+    /** Relative look delta (finger drag in-world). */
+    public static void sendCursorDelta(float x, float y) {
+        deltaX = x;
+        deltaY = y;
+        mouseX += x;
+        mouseY += y;
+        nativeSendCursorPos(mouseX, mouseY);
+        org.libsdl.app.SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, true);
+    }
+
+    /** GLFW button index: 0 left, 1 right, 2 middle. */
+    public static void sendMouseButton(int button, boolean down) {
+        int sdlButton = 0;
+        if (button == GLFW_MOUSE_LEFT) sdlButton = MotionEvent.BUTTON_PRIMARY;
+        else if (button == GLFW_MOUSE_RIGHT) sdlButton = MotionEvent.BUTTON_SECONDARY;
+        else if (button == GLFW_MOUSE_MIDDLE) sdlButton = MotionEvent.BUTTON_TERTIARY;
+
+        nativeSendMouseButton(button, down ? 1 : 0, 0);
+        if (sdlButton == 0) return;
+
+        if (down) sMouseButtonState |= sdlButton;
+        else sMouseButtonState &= ~sdlButton;
+        org.libsdl.app.SDLActivity.onNativeMouse(
+                sMouseButtonState,
+                down ? MotionEvent.ACTION_DOWN : MotionEvent.ACTION_UP,
+                clampX(mouseX), clampY(mouseY), false);
+    }
+
+    private static float clampX(float x) {
+        int width = windowWidth;
+        return width > 0 ? Math.max(0f, Math.min(width - 1f, x)) : x;
+    }
+
+    private static float clampY(float y) {
+        int height = windowHeight;
+        return height > 0 ? Math.max(0f, Math.min(height - 1f, y)) : y;
+    }
 }
