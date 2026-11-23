@@ -123,14 +123,18 @@ async fn install(version: &str, loader: Loader, report: &impl Fn(Event)) -> Resu
     };
     if loader == Loader::Fabric {
         let added = add_fabric_api(&mut plan, version, report).await;
-        // `plan_loader` wrote the list before the API was appended; rewrite it
-        // so aria2 sees the mod jar too.
+        let touch = add_touch_controller(&mut plan, version, report).await?;
+        // `plan_loader` wrote the list before the mods were appended; rewrite
+        // it so aria2 sees every jar in the same transaction.
         plan.write(&root, &cache)
             .await
             .map_err(|error| format!("无法写入下载清单：{error}"))?;
         if added {
             report(Event::Log("Fabric API 已加入下载清单".to_string()));
         }
+        report(Event::Log(format!(
+            "触摸支持：{touch} 个模组已加入下载清单"
+        )));
     }
     let list = plan.path(&cache);
     report(Event::Log(format!(
@@ -235,6 +239,53 @@ async fn resolve_fabric_version(mdt: &MdtClient, version: &str) -> Result<String
         .first()
         .map(|entry| entry.version.clone())
         .ok_or_else(|| format!("Fabric 没有适用于 {version} 的版本"))
+}
+
+/// Resolve TouchController + required Fabric dependencies and append the jars.
+///
+/// Vanilla has no touch input on 26.3, so this is a hard requirement: a
+/// resolution failure aborts the install before aria2 starts, instead of
+/// producing an instance nobody can control.
+async fn add_touch_controller(
+    plan: &mut mdt::plan::DownloadPlan,
+    mc_version: &str,
+    report: &impl Fn(Event),
+) -> Result<usize, String> {
+    report(Event::Log(format!(
+        "TouchController：解析 {mc_version} 的 Fabric 版本和依赖…"
+    )));
+    let files = crate::modrinth::touch_controller(mc_version).await?;
+    let has_fabric_api = plan.entries.iter().any(|entry| {
+        entry
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("fabric-api-") && name.ends_with(".jar"))
+    });
+    let mut added = 0usize;
+    for file in files {
+        // Fabric API may already be in the plan from Fabric Maven under a
+        // different build number; never install a second copy.
+        if file.project_id == crate::modrinth::FABRIC_API_PROJECT && has_fabric_api {
+            continue;
+        }
+        let path = PathBuf::from("versions")
+            .join(&plan.id)
+            .join("mods")
+            .join(&file.filename);
+        if plan.entries.iter().any(|entry| entry.path == path) {
+            continue;
+        }
+        report(Event::Log(format!("触摸支持：{}", file.filename)));
+        plan.entries.push(mdt::plan::PlanEntry {
+            url: file.url,
+            path,
+            size: file.size,
+            sha1: file.sha1,
+        });
+        added += 1;
+    }
+    Ok(added)
 }
 
 /// Append Fabric API to `mods/` under the loader's version directory.

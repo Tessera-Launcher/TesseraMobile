@@ -278,7 +278,10 @@ aria2c、JRE、运行库三项都装好后，下载页从依赖卡片切换到�
   - 从 `meta.fabricmc.net` 取最新稳定 Loader 版本，调用 MDT 的
     `plan_loader`，版本目录形如 `26.3-fabric-0.20.1`；
   - Fabric API 先查 `maven.fabricmc.net`，拿不到捆绑 jar 再回落 Modrinth；
-  - API jar 写进 `versions/<id>/mods/`；API 解析失败只记日志，不放弃 Loader。
+  - 再从 Modrinth 解析 TouchController 的最新 Fabric 客户端版本，并递归解析
+    它的必需依赖（目前是 Fabric API、Fabric Language Kotlin），全部追加到同一份
+    aria2 清单；TouchController 或必需依赖解析失败会让安装失败，避免装出无法操作的实例；
+  - API 和触摸模组 jar 都写进 `versions/<id>/mods/`；API 解析失败只记日志，不放弃 Loader。
 - aria2c 的参数照桌面版抄：`-j16 -x1 -s1`、`--console-log-level=notice`、
   `--show-console-readout=false`、`--summary-interval=0`、`--max-tries=3`、
   `--stop-with-process`，Android 额外传 `--ca-certificate`。

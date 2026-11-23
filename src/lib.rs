@@ -35,6 +35,7 @@ pub mod jar;
 pub mod jre;
 pub mod launch;
 pub mod login;
+pub mod modrinth;
 pub mod platform;
 pub mod runtime;
 pub mod settings;
