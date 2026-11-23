@@ -177,7 +177,7 @@ component LoaderChoice inherits Rectangle {
     in property <bool> enabled: true;
     callback clicked;
 
-    height: 70px;
+    height: 94px;
     border-radius: 12px;
     background: root.selected ? Theme.pressed : Theme.bar;
     border-width: 1px;
@@ -198,10 +198,12 @@ component LoaderChoice inherits Rectangle {
         x: 14px;
         y: 36px;
         width: root.width - 52px;
+        height: 50px;
         text: root.detail;
         font-size: 11px;
         color: Theme.dim;
         wrap: word-wrap;
+        overflow: clip;
     }
 
     Rectangle {
