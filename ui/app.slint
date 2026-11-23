@@ -7,7 +7,7 @@
 import { Theme } from "theme.slint";
 import { BottomBar, Tab } from "navbar.slint";
 import { HomePage, InstalledRow } from "home.slint";
-import { DownloadPage, VersionFilter, VersionRow } from "download.slint";
+import { DownloadPage, VersionRow } from "download.slint";
 import { SettingsPage } from "settings.slint";
 import { AccountsPage, AccountRow } from "accounts_page.slint";
 import { LoginPage, IdentityRow, LoginPhase } from "login_page.slint";
@@ -88,7 +88,6 @@ export component AppWindow inherits Window {
     in-out property <bool> versions-loading: false;
     in-out property <string> versions-error: "";
     in-out property <string> version-query: "";
-    in-out property <VersionFilter> version-filter: VersionFilter.all;
     in-out property <int> version-count: 0;
     in-out property <string> install-version: "";
     in-out property <bool> install-configuring: false;
@@ -122,7 +121,7 @@ export component AppWindow inherits Window {
     callback jre-install-requested;
     callback runtime-install-requested;
     callback versions-refresh;
-    callback versions-refilter(VersionFilter, string);
+    callback versions-refilter(string);
     callback version-group-toggled(string);
     callback version-install(string);
     callback install-start(bool);
@@ -181,7 +180,6 @@ export component AppWindow inherits Window {
                 versions-loading: root.versions-loading;
                 versions-error: root.versions-error;
                 version-query <=> root.version-query;
-                version-filter <=> root.version-filter;
                 version-count: root.version-count;
                 install-version: root.install-version;
                 install-configuring: root.install-configuring;
@@ -201,8 +199,8 @@ export component AppWindow inherits Window {
                 refresh-versions => {
                     root.versions-refresh();
                 }
-                versions-refilter(filter, query) => {
-                    root.versions-refilter(filter, query);
+                versions-refilter(query) => {
+                    root.versions-refilter(query);
                 }
                 version-group-toggled(key) => {
                     root.version-group-toggled(key);

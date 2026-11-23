@@ -92,12 +92,6 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     let picker = Arc::new(Mutex::new(versions::Picker::default()));
     let install_busy = Arc::new(AtomicBool::new(false));
     let launch_busy = Arc::new(AtomicBool::new(false));
-    {
-        let initial = versions::Filter::from_key(&config.borrow().download_filter);
-        picker.lock().unwrap().set_filter(initial);
-        ui.set_version_filter(slint_filter(initial));
-    }
-
     // The home tab's list is a snapshot; entering the tab or finishing an
     // install asks for a fresh scan.
     {
@@ -721,38 +715,18 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     }
 
-    // Search and kind filter. The picker owns the filtered indices and the
-    // folded rows; this just republishes the model.
+    // Search over the short 26.2+ release list; the channel is fixed, so this
+    // only republishes the picker's rows.
     {
         let weak = ui.as_weak();
         let picker = picker.clone();
-        let config = config.clone();
-        let state = state.clone();
-        ui.on_versions_refilter(move |filter, query| {
+        ui.on_versions_refilter(move |query| {
             let Some(ui) = weak.upgrade() else {
                 return;
             };
-            let filter = match filter {
-                VersionFilter::All => versions::Filter::All,
-                VersionFilter::Release => versions::Filter::Release,
-                VersionFilter::Snapshot => versions::Filter::Snapshot,
-                VersionFilter::Old => versions::Filter::Old,
-            };
             let mut picker = picker.lock().unwrap();
-            picker.set_filter(filter);
             picker.set_query(query.to_string());
             publish_versions(&ui, &picker);
-            drop(picker);
-
-            let key = filter.key().to_string();
-            let mut next = config.borrow().clone();
-            if next.download_filter != key {
-                next.download_filter = key;
-                let root = state.borrow().root().to_path_buf();
-                if next.save(&root).is_ok() {
-                    *config.borrow_mut() = next;
-                }
-            }
         });
     }
 
@@ -1012,15 +986,6 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
 fn reload_for(ui: &AppWindow, state: &Rc<RefCell<State>>, rows: &Rc<VecModel<AccountRow>>) {
     state.borrow_mut().reload();
     refresh(ui, state, rows);
-}
-
-fn slint_filter(filter: versions::Filter) -> VersionFilter {
-    match filter {
-        versions::Filter::All => VersionFilter::All,
-        versions::Filter::Release => VersionFilter::Release,
-        versions::Filter::Snapshot => VersionFilter::Snapshot,
-        versions::Filter::Old => VersionFilter::Old,
-    }
 }
 
 /// Fetch the Minecraft version index once all four pieces are installed.

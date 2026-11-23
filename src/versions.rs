@@ -5,10 +5,11 @@
 //! is handed our webpki-roots client so it never touches
 //! `rustls-platform-verifier`.
 //!
-//! The picker keeps the full list, the search/filter state and the folded tree
-//! rows. The UI only ever renders the rows this module produces.
+//! The picker keeps the 26.2+ stable release list, the search state and the
+//! rows the UI renders. Snapshots and the old channels are filtered out before
+//! they reach the UI.
 
-use mdt::{HttpDownloader, MdtClient, Mirror, NoopReporter, VersionType};
+use mdt::{HttpDownloader, McVersion, MdtClient, Mirror, NoopReporter, VersionType};
 
 use crate::version_tree;
 
@@ -21,62 +22,13 @@ pub struct Version {
     pub date: String,
 }
 
-/// The kind-of-release filter above the list.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Filter {
-    #[default]
-    All,
-    Release,
-    Snapshot,
-    Old,
-}
-
-impl Filter {
-    pub fn key(self) -> &'static str {
-        match self {
-            Filter::All => "all",
-            Filter::Release => "release",
-            Filter::Snapshot => "snapshot",
-            Filter::Old => "old",
-        }
-    }
-
-    pub fn from_key(key: &str) -> Self {
-        match key {
-            "release" => Filter::Release,
-            "snapshot" => Filter::Snapshot,
-            "old" => Filter::Old,
-            _ => Filter::All,
-        }
-    }
-
-    pub fn from_index(index: i32) -> Self {
-        match index {
-            1 => Filter::Release,
-            2 => Filter::Snapshot,
-            3 => Filter::Old,
-            _ => Filter::All,
-        }
-    }
-
-    fn matches(self, kind: VersionType) -> bool {
-        match self {
-            Filter::All => true,
-            Filter::Release => kind == VersionType::Release,
-            Filter::Snapshot => kind == VersionType::Snapshot,
-            Filter::Old => matches!(kind, VersionType::OldBeta | VersionType::OldAlpha),
-        }
-    }
-}
-
-/// Search + filter + folded rows.
+/// Search over the stable release list.
 #[derive(Debug)]
 pub struct Picker {
     pub all: Vec<Version>,
     visible: Vec<usize>,
     expanded: Vec<String>,
     query: String,
-    filter: Filter,
     rows: Vec<version_tree::Row>,
 }
 
@@ -87,7 +39,6 @@ impl Default for Picker {
             visible: Vec::new(),
             expanded: Vec::new(),
             query: String::new(),
-            filter: Filter::All,
             rows: Vec::new(),
         }
     }
@@ -102,12 +53,6 @@ impl Picker {
 
     pub fn set_query(&mut self, query: String) {
         self.query = query;
-        self.expanded.clear();
-        self.rebuild();
-    }
-
-    pub fn set_filter(&mut self, filter: Filter) {
-        self.filter = filter;
         self.expanded.clear();
         self.rebuild();
     }
@@ -129,7 +74,7 @@ impl Picker {
         &self.rows
     }
 
-    /// How many versions match the current search/filter.
+    /// How many versions match the current search.
     pub fn count(&self) -> usize {
         self.visible.len()
     }
@@ -148,16 +93,13 @@ impl Picker {
         let query = self.query.trim().to_lowercase();
         self.visible.clear();
         for (index, version) in self.all.iter().enumerate() {
-            if !self.filter.matches(version.kind) {
-                continue;
-            }
             if !query.is_empty() && !version.id.to_lowercase().contains(&query) {
                 continue;
             }
             self.visible.push(index);
         }
-        let tree = self.filter == Filter::All && query.is_empty();
-        self.rows = version_tree::build(&self.all, &self.visible, &self.expanded, tree);
+        // There are no snapshot families in this list, so every row is flat.
+        self.rows = version_tree::build(&self.all, &self.visible, &self.expanded, false);
     }
 }
 
@@ -185,7 +127,7 @@ async fn fetch() -> Result<Vec<Version>, String> {
         .build()
         .map_err(|error| format!("无法初始化版本索引：{error}"))?;
     let versions = mdt
-        .versions()
+        .versions_since(McVersion::new(26, 2, 0))
         .await
         .map_err(|error| format!("无法获取版本列表：{error}"))?;
     Ok(versions
@@ -232,44 +174,18 @@ mod tests {
     }
 
     #[test]
-    fn a_search_flattens_the_tree() {
+    fn search_keeps_only_matching_release_rows() {
         let mut picker = Picker::default();
         picker.set_versions(vec![
-            version("1.21.9-pre2", VersionType::Snapshot),
-            version("1.21.9-pre1", VersionType::Snapshot),
-            version("1.21.8", VersionType::Release),
+            version("26.3", VersionType::Release),
+            version("26.2", VersionType::Release),
         ]);
-        picker.set_query("pre".to_string());
-        assert_eq!(picker.rows().len(), 2);
+        picker.set_query("26.3".to_string());
+        assert_eq!(picker.rows().len(), 1);
+        assert_eq!(picker.count(), 1);
         assert!(picker
             .rows()
             .iter()
             .all(|row| matches!(row.kind, version_tree::RowKind::Version(_))));
-    }
-
-    #[test]
-    fn the_release_filter_hides_snapshots() {
-        let mut picker = Picker::default();
-        picker.set_versions(vec![
-            version("1.21.9-pre1", VersionType::Snapshot),
-            version("1.21.8", VersionType::Release),
-        ]);
-        picker.set_filter(Filter::Release);
-        assert_eq!(picker.count(), 1);
-        assert_eq!(picker.rows().len(), 1);
-    }
-
-    #[test]
-    fn toggling_a_group_expands_and_collapses_it() {
-        let mut picker = Picker::default();
-        picker.set_versions(vec![
-            version("1.21.9-pre2", VersionType::Snapshot),
-            version("1.21.9-pre1", VersionType::Snapshot),
-        ]);
-        assert_eq!(picker.rows().len(), 1);
-        picker.toggle("1.21.9-pre");
-        assert_eq!(picker.rows().len(), 3);
-        picker.toggle("1.21.9-pre");
-        assert_eq!(picker.rows().len(), 1);
     }
 }

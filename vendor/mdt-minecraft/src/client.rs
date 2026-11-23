@@ -17,6 +17,7 @@ use crate::installer;
 use crate::installer::InstallRequest;
 #[cfg(not(feature = "minimal"))]
 use crate::manifest::{self, VersionEntry};
+use crate::mc_version::McVersion;
 use crate::mirror::Mirror;
 use crate::modloader::ModLoader;
 use crate::urls::ManifestUrls;
@@ -90,6 +91,19 @@ impl MdtClient {
             manifest::fetch_minecraft_version_manifest(self.downloader.as_ref(), &self.mirror)
                 .await?;
         Ok(manifest.versions)
+    }
+
+    /// Fetch only stable releases at or above `minimum`.
+    ///
+    /// Tessera Mobile is Vulkan-only and starts at 26.2, so this keeps the
+    /// snapshots and old channel out of the download list at the source.
+    pub async fn versions_since(&self, minimum: McVersion) -> Result<Vec<VersionEntry>, MdtError> {
+        Ok(self
+            .versions()
+            .await?
+            .into_iter()
+            .filter(|entry| entry.is_release_since(minimum))
+            .collect())
     }
 
     /// Resolve a vanilla version and write its download list — nothing is transferred.
@@ -417,9 +431,9 @@ impl MdtClientBuilder {
         let downloader: Arc<dyn Downloader> = self.downloader.map_or_else(
             || -> Result<Arc<dyn Downloader>, MdtError> {
                 #[cfg(feature = "tokio")]
-                return Ok(Arc::new(HttpDownloader::new(
-                    http.expect("the default client is built when no downloader is injected"),
-                )));
+                return Ok(Arc::new(HttpDownloader::new(http.expect(
+                    "the default client is built when no downloader is injected",
+                ))));
 
                 #[cfg(not(feature = "tokio"))]
                 return Err(MdtError::MissingDownloader);

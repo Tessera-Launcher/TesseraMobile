@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::customize::Downloader;
 use crate::error::MdtError;
+use crate::mc_version::McVersion;
 use crate::mirror::Mirror;
 use crate::urls::ManifestUrls;
 
@@ -45,6 +46,14 @@ pub enum VersionType {
     OldAlpha,
     #[serde(other)]
     Other,
+}
+
+impl VersionEntry {
+    /// Whether this entry is a stable release at or above `minimum`.
+    pub fn is_release_since(&self, minimum: McVersion) -> bool {
+        self.version_type == VersionType::Release
+            && McVersion::parse(&self.id).is_some_and(|version| version >= minimum)
+    }
 }
 
 // ===== Fabric manifest =====
@@ -138,4 +147,31 @@ pub async fn fetch_fabric_manifest(
     let candidates = [primary.fabric.as_str(), fallback.fabric.as_str()];
     let text = fetch_text(downloader, &candidates, "Fabric manifest").await?;
     Ok(serde_json::from_str(&text)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(id: &str, version_type: VersionType) -> VersionEntry {
+        VersionEntry {
+            id: id.to_string(),
+            version_type,
+            url: String::new(),
+            time: String::new(),
+            release_time: String::new(),
+        }
+    }
+
+    #[test]
+    fn only_releases_at_or_above_the_minimum_pass() {
+        let minimum = McVersion::new(26, 2, 0);
+        assert!(entry("26.2", VersionType::Release).is_release_since(minimum));
+        assert!(entry("26.3", VersionType::Release).is_release_since(minimum));
+        assert!(entry("26.10.1", VersionType::Release).is_release_since(minimum));
+        assert!(!entry("26.1.2", VersionType::Release).is_release_since(minimum));
+        assert!(!entry("1.21.11", VersionType::Release).is_release_since(minimum));
+        assert!(!entry("26.2-snapshot-1", VersionType::Snapshot).is_release_since(minimum));
+        assert!(!entry("26.2", VersionType::Snapshot).is_release_since(minimum));
+    }
 }
