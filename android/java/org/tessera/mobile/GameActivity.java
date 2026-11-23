@@ -68,7 +68,14 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
      */
     private void handleTouch(MotionEvent event, int width, int height) {
         TesseraSdl.sendTouch(event, width, height);
-        boolean grabbing = org.lwjgl.glfw.CallbackBridge.isGrabbing();
+        // Once Minecraft has grabbed the pointer, TouchController owns the
+        // finger stream.  Do not also inject an absolute mouse button: a held
+        // fallback button from the forward widget would keep attacking and
+        // prevent the look gesture from taking effect.
+        if (org.lwjgl.glfw.CallbackBridge.isGrabbing()) {
+            menuPointerDown = false;
+            return;
+        }
         // launch.rs starts the game with an 854x480 logical window; the
         // TextureView is the physical 2264x1080 surface.
         float x = event.getX() * 854f / width;
