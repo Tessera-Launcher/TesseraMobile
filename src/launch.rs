@@ -617,8 +617,7 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
     let mut vm_ptr: *mut RawVm = std::ptr::null_mut();
     let mut env_ptr: *mut c_void = std::ptr::null_mut();
     // HotSpot writes its rejection reason to stderr, which Android otherwise
-    // sends to logcat. Keep a copy so the launch screen can show the exact
-    // option it did not like.
+    // sends to logcat. Keep a copy in files/jvm-start.log for debugging.
     let stderr_path = crate::platform::private_dir().join("jvm-start.log");
     let stderr_file = std::fs::File::create(&stderr_path).ok();
     let saved_stderr = stderr_file

@@ -193,8 +193,8 @@ async fn install(version: &str, loader: Loader, report: &impl Fn(Event)) -> Resu
     }
 
     // Install-time client patches make a fresh install bootable on Android
-    // without running the host scripts.  Launch runs the same idempotent pass,
-    // so installs made by an older build are repaired on first start too.
+    // without a host toolchain. This is the only patch point; launching never
+    // rewrites the client jar.
     let client = root
         .join("versions")
         .join(&plan.id)

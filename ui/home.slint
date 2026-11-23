@@ -1,7 +1,8 @@
 // 主页: what is already installed, plus the account entry point.
 //
 // The list is a snapshot Rust builds from `游戏/versions`; the page never reads
-// the disk itself. A row is read-only until the launch screen exists.
+// the disk itself. Tapping a row starts the Java game host; the launcher stays
+// on this page and is visible again as soon as the game host finishes.
 
 import { Theme } from "theme.slint";
 import { ListView } from "std-widgets.slint";
@@ -73,17 +74,9 @@ export component HomePage inherits Page {
     in property <[InstalledRow]> installed;
     in property <int> installed-count: 0;
 
-    // Launch state: a full-screen log, not a dialog.
-    in property <string> launch-version: "";
-    in property <bool> launch-busy: false;
-    in property <string> launch-log: "";
-    in property <string> launch-summary: "";
-    in property <bool> launch-failed: false;
-
     callback accounts-requested;
     callback uninstall-version(string);
     callback launch-requested(string);
-    callback launch-dismissed;
 
     HeaderButton {
         // Right-aligned on the title's baseline: the title sits at
@@ -96,7 +89,7 @@ export component HomePage inherits Page {
         }
     }
 
-    if root.launch-version == "" : VerticalLayout {
+    VerticalLayout {
         x: Theme.gutter;
         y: root.top-inset + 64px;
         width: root.width - Theme.gutter * 2;
@@ -135,88 +128,4 @@ export component HomePage inherits Page {
         }
     }
 
-    if root.launch-version != "" : Rectangle {
-        x: 0;
-        y: 0;
-        width: 100%;
-        height: 100%;
-        background: Theme.bg;
-
-        VerticalLayout {
-            x: Theme.gutter;
-            y: root.top-inset + 18px;
-            width: root.width - Theme.gutter * 2;
-            height: root.height - (root.top-inset + 18px) - 8px;
-            spacing: 10px;
-
-            Rectangle {
-                height: 42px;
-                background: transparent;
-
-                Text {
-                    x: 0px;
-                    y: 7px;
-                    text: root.launch-busy ? "启动 " + root.launch-version : "启动 " + root.launch-version;
-                    font-size: 22px;
-                    font-weight: 600;
-                    color: Theme.text;
-                }
-
-                if !root.launch-busy : HeaderButton {
-                    x: parent.width - self.width;
-                    y: 6px;
-                    label: "返回";
-                    clicked => {
-                        root.launch-dismissed();
-                    }
-                }
-            }
-
-            Rectangle {
-                vertical-stretch: 1;
-                border-radius: 12px;
-                background: Theme.bar;
-                border-width: 1px;
-                border-color: Theme.line;
-
-                Text {
-                    x: 14px;
-                    y: 10px;
-                    text: "活动";
-                    font-size: 12px;
-                    font-weight: 600;
-                    color: Theme.dim;
-                }
-
-                Text {
-                    x: 12px;
-                    y: 32px;
-                    width: parent.width - 24px;
-                    height: parent.height - 42px;
-                    text: root.launch-log;
-                    font-size: 11px;
-                    color: Theme.dim;
-                    wrap: word-wrap;
-                }
-            }
-
-            Rectangle {
-                height: 44px;
-                background: transparent;
-
-                Text {
-                    x: 0px;
-                    y: 0px;
-                    width: 100%;
-                    height: 100%;
-                    text: root.launch-summary;
-                    font-size: 12px;
-                    color: root.launch-failed
-                        ? Theme.danger
-                        : (root.launch-busy ? Theme.dim : Theme.accent);
-                    wrap: word-wrap;
-                }
-            }
-        }
-    }
 }

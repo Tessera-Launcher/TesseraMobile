@@ -126,6 +126,16 @@ pub fn start_game_activity(version: &str) -> Result<(), String> {
     imp::start_game_activity(version)
 }
 
+/// Restart the app process so a fresh launcher (and JVM) can be created.
+pub fn restart_launcher() -> Result<(), String> {
+    imp::restart_launcher()
+}
+
+/// Cancel a restart alarm left by a previous process.
+pub fn cancel_restart() -> Result<(), String> {
+    imp::cancel_restart()
+}
+
 /// The APK's native library directory (`ApplicationInfo.nativeLibraryDir`).
 ///
 /// Binaries there are executable even when the app targets API 29 or newer;
@@ -315,6 +325,49 @@ mod imp {
         })
     }
 
+    pub fn restart_launcher() -> Result<(), String> {
+        with_activity(|env, activity| {
+            let loader = env
+                .call_method(activity, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+                .l()?;
+            let class_name = env.new_string("org.tessera.mobile.GameActivity")?;
+            let class = env
+                .call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&JObject::from(class_name))],
+                )?
+                .l()?;
+            env.call_static_method(jni::objects::JClass::from(class), "gameExited", "()V", &[])?;
+            Ok(())
+        })
+    }
+
+    pub fn cancel_restart() -> Result<(), String> {
+        with_activity(|env, activity| {
+            let loader = env
+                .call_method(activity, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+                .l()?;
+            let class_name = env.new_string("org.tessera.mobile.GameActivity")?;
+            let class = env
+                .call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&JObject::from(class_name))],
+                )?
+                .l()?;
+            env.call_static_method(
+                jni::objects::JClass::from(class),
+                "cancelPendingRestart",
+                "(Landroid/content/Context;)V",
+                &[JValue::Object(activity)],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Start one of the two Settings intents. `uri` picks the per-app page.
     fn start_settings(
         env: &mut jni::JNIEnv,
@@ -472,6 +525,14 @@ mod imp {
 
     pub fn start_game_activity(_version: &str) -> Result<(), String> {
         Err("桌面构建不启动游戏".to_string())
+    }
+
+    pub fn restart_launcher() -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn cancel_restart() -> Result<(), String> {
+        Ok(())
     }
 
     /// The desktop has no such permission: everything is already reachable.

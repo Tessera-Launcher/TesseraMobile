@@ -24,13 +24,13 @@ use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 pub mod accounts;
 pub mod app_ids;
 pub mod aria2;
+pub mod client_patch;
 pub mod download;
 pub mod fabric_api;
 pub mod fsutil;
 pub mod http;
 pub mod install;
 pub mod installed;
-pub mod client_patch;
 pub mod jar;
 pub mod jre;
 pub mod launch;
@@ -772,42 +772,18 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     // Tapping an installed row opens the Java game host. The Java host owns
     // the TextureView/Surface and only then calls nativeStartGame, because SDL
     // must be initialized against a real Android Surface before the JVM starts.
+    // There is no launch screen: the launcher stays on the home page behind the
+    // game and is visible again when GameActivity finishes.
     {
-        let weak = ui.as_weak();
         let busy = launch_busy.clone();
         ui.on_launch_requested(move |dir| {
-            let Some(ui) = weak.upgrade() else {
-                return;
-            };
             if busy.swap(true, Ordering::SeqCst) {
                 return;
             }
             let dir = dir.to_string();
-            ui.set_launch_version(dir.clone().into());
-            ui.set_launch_busy(true);
-            ui.set_launch_log("".into());
-            ui.set_launch_summary("正在打开游戏窗口…".into());
-            ui.set_launch_failed(false);
-
             if let Err(problem) = platform::start_game_activity(&dir) {
                 busy.store(false, Ordering::SeqCst);
-                ui.set_launch_busy(false);
-                ui.set_launch_failed(true);
-                ui.set_launch_summary(format!("打开游戏窗口失败：{problem}").into());
-            } else {
-                ui.set_launch_summary("游戏窗口已打开；退出游戏后请重启应用".into());
-            }
-        });
-    }
-
-    {
-        let weak = ui.as_weak();
-        ui.on_launch_dismissed(move || {
-            if let Some(ui) = weak.upgrade() {
-                ui.set_launch_version("".into());
-                ui.set_launch_log("".into());
-                ui.set_launch_summary("".into());
-                ui.set_launch_failed(false);
+                eprintln!("打开游戏窗口失败：{problem}");
             }
         });
     }
@@ -1190,12 +1166,23 @@ pub extern "system" fn Java_org_tessera_mobile_GameActivity_nativeStartGame(
     let log = platform::private_dir().join("game-launch.log");
     launch::spawn(dir, None, move |event| {
         use std::io::Write;
+        let finished = matches!(
+            &event,
+            crate::launch::Event::Exited { .. } | crate::launch::Event::Failed(_)
+        );
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&log)
         {
             let _ = writeln!(file, "{event:?}");
+        }
+        // The game runs inside GameActivity. When main returns (or startup
+        // fails), restart the app process: HotSpot cannot create a second JVM,
+        // so staying in this process would make the next launch fail. The
+        // relaunched process opens the launcher's home page.
+        if finished {
+            let _ = platform::restart_launcher();
         }
     });
 }
@@ -1206,6 +1193,7 @@ fn android_main(app: slint::android::AndroidApp) {
     // `ndk_context` only carries the Application, so keep the activity from
     // `android-activity` for the calls that need it (window focus).
     platform::set_activity(app.activity_as_ptr());
+    let _ = platform::cancel_restart();
     // Executables (aria2c) cannot run from `/sdcard`; keep them in the app's
     // private files directory, separate from the shared data root.
     if let Some(dir) = app.internal_data_path() {
@@ -1346,21 +1334,6 @@ fn publish_installed(ui: &AppWindow) {
     let count = rows.len() as i32;
     ui.set_installed(ModelRc::from(Rc::new(VecModel::from(rows))));
     ui.set_installed_count(count);
-}
-
-/// Launch screen's activity tail; same shape as the install log.
-fn append_launch_log(
-    ui: &AppWindow,
-    lines: &Arc<Mutex<VecDeque<String>>>,
-    line: impl Into<String>,
-) {
-    let mut lines = lines.lock().unwrap();
-    lines.push_back(line.into());
-    while lines.len() > 12 {
-        lines.pop_front();
-    }
-    let text = lines.iter().cloned().collect::<Vec<_>>().join("\n");
-    ui.set_launch_log(text.into());
 }
 
 /// Keep the install screen's activity tail short enough to fit its box; the

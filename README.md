@@ -34,7 +34,15 @@ cargo run
 Android（真机或模拟器接着 `adb` 就行）：
 
 ```sh
-./scripts/deploy.sh          # 编译 → 安装 → 启动
+export ANDROID_HOME=$HOME/java/android-sdk
+export ANDROID_NDK_ROOT=$HOME/android-ndk-r30
+export ANDROID_NDK_HOME=$ANDROID_NDK_ROOT
+export PATH="$ANDROID_HOME/build-tools/34.0.0:$PATH"
+
+cargo apk2 build --target aarch64-linux-android --lib
+adb install -r target/debug/apk/tessera.apk
+adb shell am force-stop org.tessera.mobile
+adb shell am start -n org.tessera.mobile/android.app.NativeActivity
 ```
 
 首次在新机器上要准备：
