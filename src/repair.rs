@@ -122,6 +122,8 @@ async fn repair(version_dir: &str, report: &impl Fn(Event)) -> Result<(), String
         report(Event::Log(format!("……另有 {} 个错误文件", bad.len() - 12)));
     }
     if bad.is_empty() {
+        ensure_client_patch(&dir, version_dir, report)?;
+        record_jars(&game, &plan, &mut state)?;
         save_state(&state_path, &state)?;
         report(Event::Finished {
             version: version_dir.to_string(),
@@ -206,6 +208,7 @@ async fn repair(version_dir: &str, report: &impl Fn(Event)) -> Result<(), String
         ));
     }
 
+    ensure_client_patch(&dir, version_dir, report)?;
     record_jars(&game, &plan, &mut state)?;
     save_state(&state_path, &state)?;
     report(Event::Finished {
@@ -214,6 +217,27 @@ async fn repair(version_dir: &str, report: &impl Fn(Event)) -> Result<(), String
         checked: plan.entries.len(),
         seconds: started.elapsed().as_secs_f64(),
     });
+    Ok(())
+}
+
+/// The client jar has been normalized and patched, so an integrity pass must
+/// re-apply the Vulkan-only edits even when the jar itself was not listed as
+/// damaged. This is idempotent for an already patched jar.
+fn ensure_client_patch(
+    dir: &Path,
+    version_dir: &str,
+    report: &impl Fn(Event),
+) -> Result<(), String> {
+    let client = dir.join(format!("{version_dir}.jar"));
+    if !client.is_file() {
+        return Ok(());
+    }
+    match crate::client_patch::apply(&client)? {
+        crate::client_patch::Outcome::Patched => {
+            report(Event::Log("客户端补丁：已重新应用".to_string()));
+        }
+        _ => {}
+    }
     Ok(())
 }
 
