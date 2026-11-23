@@ -11,6 +11,7 @@
 //! the manifest keeps everything except its `Sealed:` lines. A jar that is
 //! neither signed nor sealed is left untouched.
 
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, BufReader, Read, Write};
 use std::path::Path;
@@ -25,6 +26,96 @@ pub fn normalize(path: &Path) -> Result<bool, String> {
         return Ok(false);
     }
     rewrite(path)
+}
+
+/// Replace named entries in `path`, in place.
+///
+/// Entries not in `replacements` are copied unchanged. Returns `true` when at
+/// least one entry had different bytes and the archive was rewritten. This is
+/// the shared primitive for the client patches: it touches only the class and
+/// shader entries the patch names, leaving every resource and signature entry
+/// exactly as it was.
+pub fn replace_entries(
+    path: &Path,
+    replacements: &HashMap<String, Vec<u8>>,
+) -> Result<bool, String> {
+    let mut archive = zip::ZipArchive::new(BufReader::new(open(path)?))
+        .map_err(|error| format!("无法解析 {}: {error}", path.display()))?;
+    let mut any_changed = false;
+    for (name, replacement) in replacements {
+        let mut entry = archive
+            .by_name(name)
+            .map_err(|error| format!("jar 缺少 {name}: {error}"))?;
+        let mut current = Vec::new();
+        entry
+            .read_to_end(&mut current)
+            .map_err(|error| format!("无法读取 jar 条目 {name}: {error}"))?;
+        if current != *replacement {
+            any_changed = true;
+            break;
+        }
+    }
+    if !any_changed {
+        return Ok(false);
+    }
+    let tmp = path.with_extension("patching");
+    let _ = fs::remove_file(&tmp);
+    let result = write_replaced(path, &tmp, replacements).and_then(|()| publish(&tmp, path));
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result.map(|()| true)
+}
+
+fn write_replaced(
+    source: &Path,
+    tmp: &Path,
+    replacements: &HashMap<String, Vec<u8>>,
+) -> Result<(), String> {
+    let mut archive = zip::ZipArchive::new(BufReader::new(open(source)?))
+        .map_err(|error| format!("无法解析 {}: {error}", source.display()))?;
+    let output =
+        File::create(tmp).map_err(|error| format!("无法写入 {}: {error}", tmp.display()))?;
+    let mut writer = zip::ZipWriter::new(output);
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("无法读取 jar 条目: {error}"))?;
+        let name = entry
+            .name()
+            .map_err(|error| format!("无法读取 jar 条目名: {error}"))?
+            .into_owned();
+        if let Some(body) = replacements.get(&name) {
+            writer
+                .start_file(
+                    &name,
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Deflated),
+                )
+                .map_err(|error| format!("无法写入 jar 条目 {name}: {error}"))?;
+            writer
+                .write_all(body)
+                .map_err(|error| format!("无法写入 jar 条目 {name}: {error}"))?;
+            continue;
+        }
+        let options =
+            zip::write::SimpleFileOptions::default().compression_method(entry.compression());
+        if entry.is_dir() {
+            writer
+                .add_directory(&name, options)
+                .map_err(|error| format!("无法写入 jar 目录 {name}: {error}"))?;
+        } else {
+            writer
+                .start_file(&name, options)
+                .map_err(|error| format!("无法写入 jar 条目 {name}: {error}"))?;
+            io::copy(&mut entry, &mut writer)
+                .map_err(|error| format!("无法复制 jar 条目 {name}: {error}"))?;
+        }
+    }
+    writer
+        .finish()
+        .map_err(|error| format!("无法完成 {}: {error}", tmp.display()))?;
+    Ok(())
 }
 
 fn needs_normalizing(mut archive: zip::ZipArchive<BufReader<File>>) -> Result<bool, String> {

@@ -192,6 +192,30 @@ async fn install(version: &str, loader: Loader, report: &impl Fn(Event)) -> Resu
         report(Event::Log(format!("去签名 / 去密封：{normalized} 个 jar")));
     }
 
+    // Install-time client patches make a fresh install bootable on Android
+    // without running the host scripts.  Launch runs the same idempotent pass,
+    // so installs made by an older build are repaired on first start too.
+    let client = root
+        .join("versions")
+        .join(&plan.id)
+        .join(format!("{}.jar", plan.id));
+    if client.is_file() {
+        match crate::client_patch::apply(&client) {
+            Ok(crate::client_patch::Outcome::Patched) => {
+                report(Event::Log(
+                    "客户端补丁：Vulkan KHR 兼容 + OIT shader + 仅 Vulkan".to_string(),
+                ));
+            }
+            Ok(crate::client_patch::Outcome::AlreadyPatched) => {
+                report(Event::Log("客户端补丁：已应用".to_string()));
+            }
+            Ok(crate::client_patch::Outcome::NotApplicable) => {}
+            Err(problem) => {
+                return Err(format!("客户端补丁失败：{problem}"));
+            }
+        }
+    }
+
     let bytes = plan.total_bytes();
     report(Event::Finished {
         version: plan.id,

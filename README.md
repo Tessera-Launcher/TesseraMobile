@@ -226,19 +226,21 @@ Fold Craft Launcher 的做法：不用 Mojang 的 LWJGL，整套换成 FCL 的 A
 `java.library.path` 指到这些私有目录和 `/system/lib64`、`/vendor/lib64`。
 
 Tessera Mobile 只走 Vulkan：不设置任何 OpenGL/EGL 库或 `POJAV_RENDERER`。
-客户端 jar 的补丁分两层：
+客户端 jar 的补丁由启动器内建完成（`src/client_patch.rs`），只在安装完成时跑
+一次，不需要工作机上的 `javac`/Python：
 
-- `scripts/patch-vulkan-compat.sh <client.jar>`：把 `VK_EXT_vertex_attribute_divisor`
-  换成同长度的 `VK_KHR_vertex_attribute_divisor`，并展开 OIT transmittance shader
-  的输出数组写入。前者让 Pixel 7 这类只暴露 KHR 名字的驱动能通过
-  `VulkanFeatureSets` 检查；后者是 shaderc/glslang 的要求，不是 OpenGL 专属。
-- `scripts/patch-vulkan-only.sh <client.jar>`：先执行上面一层，再把
-  `PreferredGraphicsApi.getBackendsToTry()` 改成只返回 Vulkan，并把
-  `NativeLibrariesBootstrap.loadOpenGL()` 改成空方法，彻底去掉 OpenGL 回退。
+- 把 `VK_EXT_vertex_attribute_divisor` 换成同长度的
+  `VK_KHR_vertex_attribute_divisor`，让 Pixel 7 这类只暴露 KHR 名字的驱动能通过
+  `VulkanFeatureSets` 检查；
+- 展开 OIT transmittance shader 的输出数组写入，shaderc/glslang 不接受动态索引
+  fragment output；
+- 把 `PreferredGraphicsApi.getBackendsToTry()` 的字节码改成只构造
+  `VulkanBackend`，去掉 OpenGL 回退；
+- 把 `NativeLibrariesBootstrap.loadOpenGL()` 改成空方法，去掉提前加载 GL。
 
 `--graphicsBackend vulkan` 只表示“优先 Vulkan”：原版枚举仍然返回
-`{Vulkan, OpenGL}`，Vulkan 失败会回退 GL。要严格 Vulkan-only 就运行第二个脚本；
-它需要能读 classfile 72 的 JDK 28 `javac`，可用 `JAVAC=/path/to/javac` 指定。
+`{Vulkan, OpenGL}`，Vulkan 失败会回退 GL，所以安装时必须同时写入上面的
+字节码补丁。旧的 `patch-vulkan-*.sh` 脚本已删除，只保留在 Git 历史里。
 
 ## 版本列表
 
@@ -322,9 +324,8 @@ FCL 的 `libpojavexec`/`libfcl`/`libbytehook`/`libandroidnsbypass` 与 SDL 二�
 - 强制走 Vulkan，Pixel 7 上确认 `Using graphics backend Vulkan`，
   `Window size: 2264x1080`，标题画面正常渲染；
 - MobileGlues 已从运行库、启动参数和 UI 中移除；
-- 客户端 jar 的 Vulkan 兼容补丁用 `scripts/patch-vulkan-compat.sh`，严格
-  Vulkan-only 用 `scripts/patch-vulkan-only.sh`；OIT shader 展开已并入前者，
-  因为 shaderc/glslang 也不接受动态索引 fragment output。
+- 客户端 jar 的 Vulkan KHR 兼容、OIT shader 展开、Vulkan-only 和
+  `loadOpenGL()` 空实现由启动器在安装完成时自动应用。
 
 ## 下一步
 

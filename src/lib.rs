@@ -30,6 +30,7 @@ pub mod fsutil;
 pub mod http;
 pub mod install;
 pub mod installed;
+pub mod client_patch;
 pub mod jar;
 pub mod jre;
 pub mod launch;
