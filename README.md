@@ -43,4 +43,4 @@ Mojang 客户端 jar 的 Vulkan-only 补丁在安装时写入，不需要外部�
 
 GPL-3.0-or-later。其中 `vendor/mdt-minecraft` 为 MIT，
 `vendor/minecraft-auth` 为 LGPL-3.0-or-later；FCL 运行库以及 SDL、LWJGL、OpenAL
-遵循各自的许可。
+遵循各自的许可。此项目直接使用了 FCL 的源代码；大部分 Java 代码都是直接复制，或仅作了极少量修改。
