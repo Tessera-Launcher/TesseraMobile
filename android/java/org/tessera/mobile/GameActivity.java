@@ -7,12 +7,15 @@ import android.graphics.SurfaceTexture;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.Gravity;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 
 /** Full-screen game host. Slint stays in the launcher's NativeActivity. */
 public final class GameActivity extends Activity implements TextureView.SurfaceTextureListener {
@@ -57,7 +60,55 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         });
         root.addView(view, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        addLauncherKeys();
         setContentView(root);
+    }
+
+    /** Launcher-owned keys for things TouchController does not expose. */
+    private void addLauncherKeys() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setPadding(dp(4), dp(2), dp(4), dp(2));
+        bar.setBackgroundColor(Color.argb(90, 0, 0, 0));
+
+        Button escape = keyButton("ESC", KeyEvent.KEYCODE_ESCAPE);
+        Button f3 = keyButton("F3", KeyEvent.KEYCODE_F3);
+        bar.addView(escape, new LinearLayout.LayoutParams(dp(54), dp(38)));
+        LinearLayout.LayoutParams f3Params = new LinearLayout.LayoutParams(dp(40), dp(38));
+        f3Params.setMargins(dp(4), 0, 0, 0);
+        bar.addView(f3, f3Params);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.START);
+        params.setMargins(dp(12), dp(12), 0, 0);
+        root.addView(bar, params);
+    }
+
+    private Button keyButton(String label, int keyCode) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(12);
+        button.setTextColor(Color.WHITE);
+        button.setAllCaps(false);
+        button.setPadding(0, 0, 0, 0);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setBackgroundColor(Color.argb(150, 0, 0, 0));
+        button.setOnClickListener(v -> sendKeyTap(keyCode));
+        return button;
+    }
+
+    private void sendKeyTap(int keyCode) {
+        org.libsdl.app.SDLActivity.onNativeKeyDown(keyCode);
+        root.postDelayed(() -> org.libsdl.app.SDLActivity.onNativeKeyUp(keyCode), 50);
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 
 
