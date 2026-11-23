@@ -773,7 +773,9 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     // the TextureView/Surface and only then calls nativeStartGame, because SDL
     // must be initialized against a real Android Surface before the JVM starts.
     // There is no launch screen: the launcher stays on the home page behind the
-    // game and is visible again when GameActivity finishes.
+    // game and is visible again when GameActivity finishes. Because the launcher
+    // process now survives the game, the guard must be released after the
+    // Activity has been handed off; otherwise every later tap is ignored.
     {
         let busy = launch_busy.clone();
         ui.on_launch_requested(move |dir| {
@@ -781,8 +783,9 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                 return;
             }
             let dir = dir.to_string();
-            if let Err(problem) = platform::start_game_activity(&dir) {
-                busy.store(false, Ordering::SeqCst);
+            let result = platform::start_game_activity(&dir);
+            busy.store(false, Ordering::SeqCst);
+            if let Err(problem) = result {
                 eprintln!("打开游戏窗口失败：{problem}");
             }
         });
