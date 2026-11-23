@@ -1356,8 +1356,9 @@ fn publish_installed(ui: &AppWindow) {
     ui.set_installed_count(count);
 }
 
-/// Keep the install screen's activity tail short enough to fit its box; the
-/// desktop pane scrolls, the phone simply drops the oldest line as new files land.
+/// Keep the install screen's activity tail long enough to fill the phone pane;
+/// the desktop pane scrolls, but the phone has no log scroller, so it keeps a
+/// bounded tail and the UI anchors it to the bottom.
 fn append_install_log(
     ui: &AppWindow,
     lines: &Arc<Mutex<VecDeque<String>>>,
@@ -1365,7 +1366,7 @@ fn append_install_log(
 ) {
     let mut lines = lines.lock().unwrap();
     lines.push_back(line.into());
-    while lines.len() > 12 {
+    while lines.len() > 64 {
         lines.pop_front();
     }
     let text = lines.iter().cloned().collect::<Vec<_>>().join("\n");

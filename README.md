@@ -285,7 +285,7 @@ aria2c、JRE、运行库三项都装好后，下载页从依赖卡片切换到�
 - aria2c 的参数照桌面版抄：`-j16 -x1 -s1`、`--console-log-level=notice`、
   `--show-console-readout=false`、`--summary-interval=0`、`--max-tries=20`、
   `--stop-with-process`，Android 额外传 `--ca-certificate`。
-- 安装页只有一个活动日志框：aria2 每完成一个文件就追加一行，只保留最近 12 行，
+- 安装页只有一个活动日志框：aria2 每完成一个文件就追加一行，保留最近 64 行并底部对齐，
   持续刷新。没有进度条，也不解析 `[#gid]` 或走 JSON-RPC。
 - aria2 退出后跑 `plan.verify`；失败就停在日志和错误摘要，不自动重试整份清单。
 - 校验通过后对清单里所有 `.jar` 做去签名 / 去密封（`src/jar.rs`，从桌面版
