@@ -95,6 +95,12 @@ name = "android.permission.INTERNET"
 [[package.metadata.android.uses_permission]]
 name = "android.permission.MANAGE_EXTERNAL_STORAGE"
 
+# TouchController uses SDL's haptic feedback when breaking blocks. Without
+# this normal permission, Vibrator.vibrate() throws SecurityException inside
+# an SDL JNI callback and ART aborts the whole game process.
+[[package.metadata.android.uses_permission]]
+name = "android.permission.VIBRATE"
+
 [[package.metadata.android.application.activity]]
 name = "android.app.NativeActivity"
 
