@@ -174,6 +174,7 @@ component LoaderChoice inherits Rectangle {
     in property <string> label;
     in property <string> detail;
     in property <bool> selected: false;
+    in property <bool> enabled: true;
     callback clicked;
 
     height: 70px;
@@ -181,6 +182,7 @@ component LoaderChoice inherits Rectangle {
     background: root.selected ? Theme.pressed : Theme.bar;
     border-width: 1px;
     border-color: root.selected ? Theme.accent : Theme.line;
+    opacity: root.enabled ? 1.0 : 0.45;
 
     Text {
         x: 14px;
@@ -224,7 +226,9 @@ component LoaderChoice inherits Rectangle {
 
     touch := TouchArea {
         clicked => {
-            root.clicked();
+            if (root.enabled) {
+                root.clicked();
+            }
         }
     }
 }
@@ -271,9 +275,11 @@ export component DownloadPage inherits Page {
 
     // Local choice on the configuration page; reset when a new version is
     // selected (Rust clears install-version on back as well).
-    property <bool> fabric-selected: false;
+    // Vanilla cannot load TouchController, so Fabric is the only selectable
+    // option; start selected and reset to it for every version.
+    property <bool> fabric-selected: true;
     changed install-version => {
-        root.fabric-selected = false;
+        root.fabric-selected = true;
     }
 
     property <bool> ready: root.aria2-installed && root.jre-installed && root.runtime-installed;
@@ -497,11 +503,9 @@ export component DownloadPage inherits Page {
 
             LoaderChoice {
                 label: "无";
-                detail: "只安装 Minecraft 本体。";
-                selected: !root.fabric-selected;
-                clicked => {
-                    root.fabric-selected = false;
-                }
+                detail: "需要 Fabric Loader 才能加载 TouchController 触摸支持，已禁用。";
+                selected: false;
+                enabled: false;
             }
 
             LoaderChoice {
