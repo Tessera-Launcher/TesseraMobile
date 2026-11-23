@@ -92,6 +92,7 @@ export component AppWindow inherits Window {
     in-out property <string> install-version: "";
     in-out property <bool> install-configuring: false;
     in-out property <bool> install-busy: false;
+    in-out property <bool> install-repairing: false;
     in-out property <string> install-log: "";
     in-out property <string> install-summary: "";
     in-out property <bool> install-failed: false;
@@ -104,6 +105,7 @@ export component AppWindow inherits Window {
     callback accounts-requested;
     callback uninstall-version(string);
     callback launch-requested(string);
+    callback repair-requested(string);
     callback accounts-closed;
     callback account-activated(int);
     callback account-remove(int);
@@ -161,6 +163,9 @@ export component AppWindow inherits Window {
                 launch-requested(key) => {
                     root.launch-requested(key);
                 }
+                repair-version(key) => {
+                    root.repair-requested(key);
+                }
             }
             if root.tab == Tab.download : DownloadPage {
                 top-inset: root.safe-area-insets.top;
@@ -184,6 +189,7 @@ export component AppWindow inherits Window {
                 install-version: root.install-version;
                 install-configuring: root.install-configuring;
                 install-busy: root.install-busy;
+                install-repairing: root.install-repairing;
                 install-log: root.install-log;
                 install-summary: root.install-summary;
                 install-failed: root.install-failed;

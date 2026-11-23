@@ -287,11 +287,17 @@ aria2c、JRE、运行库三项都装好后，下载页从依赖卡片切换到�
   `--stop-with-process`，Android 额外传 `--ca-certificate`。
 - 安装页只有一个活动日志框：aria2 每完成一个文件就追加一行，保留最近 64 行并底部对齐，
   持续刷新。没有进度条，也不解析 `[#gid]` 或走 JSON-RPC。
-- aria2 退出后跑 `plan.verify`；失败就停在日志和错误摘要，不自动重试整份清单。
+- aria2 退出后跑 `plan.verify`；失败会列出错误文件，并提示去主页长按版本选择
+  「修复游戏…」，不会把“重新安装整个版本”当成修复。
+- 成功安装后把每个 jar 的**最终**大小和 SHA-1 写进
+  `versions/<id>/.tessera-integrity.json`；客户端 jar 已经去签名/去封装并打过
+  Vulkan 补丁，不能再用 Mojang 原始哈希判断。
 - 校验通过后对清单里所有 `.jar` 做去签名 / 去密封（`src/jar.rs`，从桌面版
   `jar::normalize` 移植），客户端、libraries 和 Fabric API 都包括。
 - 成功后结果行给出总用时和平均速度（例如 `26.3 安装完成 · 用时
   4 分 12 秒 · 平均 2.3 MB/s`）。返回按钮在安装结束后才出现。
+- 主页长按版本 →「修复游戏…」：重建 MDT 计划，检查资源完整性，只把缺失或
+  哈希错误的文件写成一份 `<id>-repair.txt` 交给 aria2；不会重下整个版本。
 - 游戏目录仍是 `/sdcard/Tessera/游戏`，布局和桌面版一致：
   `versions/`、`libraries/`、`assets/`。
 

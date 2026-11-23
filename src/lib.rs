@@ -37,6 +37,7 @@ pub mod launch;
 pub mod login;
 pub mod modrinth;
 pub mod platform;
+pub mod repair;
 pub mod runtime;
 pub mod settings;
 pub mod state;
@@ -769,8 +770,9 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     // Installing a version: tap a row, choose optional content, then start.
     // The configuration and the activity log are two full-screen states of the
     // download tab, not popups.
+    let install_lines = Arc::new(Mutex::new(VecDeque::<String>::new()));
     {
-        let lines = Arc::new(Mutex::new(VecDeque::<String>::new()));
+        let lines = install_lines.clone();
 
         let weak = ui.as_weak();
         let busy = install_busy.clone();
@@ -785,6 +787,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             let version = version.to_string();
             selected_lines.lock().unwrap().clear();
             ui.set_install_version(version.into());
+            ui.set_install_repairing(false);
             ui.set_install_configuring(true);
             ui.set_install_busy(false);
             ui.set_install_log("".into());
@@ -807,6 +810,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                 busy.store(false, Ordering::SeqCst);
                 return;
             }
+            ui.set_install_repairing(false);
             ui.set_install_configuring(false);
             ui.set_install_busy(true);
             ui.set_install_summary("下载中，进度见上方日志".into());
@@ -873,11 +877,88 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     }
 
+    // Long-press on a home row starts a resource check. It reuses the install
+    // page but runs the repair worker, which downloads only the bad subset.
+    {
+        let weak = ui.as_weak();
+        let busy = install_busy.clone();
+        let lines = install_lines.clone();
+        ui.on_repair_requested(move |dir| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if busy.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let dir = dir.to_string();
+            lines.lock().unwrap().clear();
+            ui.set_tab(Tab::Download);
+            ui.set_install_version(dir.clone().into());
+            ui.set_install_repairing(true);
+            ui.set_install_configuring(false);
+            ui.set_install_busy(true);
+            ui.set_install_log("".into());
+            ui.set_install_summary("正在检查文件完整性…".into());
+            ui.set_install_failed(false);
+
+            let weak = ui.as_weak();
+            let busy = busy.clone();
+            let lines = lines.clone();
+            repair::spawn(dir, move |event| {
+                let weak = weak.clone();
+                let busy = busy.clone();
+                let lines = lines.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = weak.upgrade() else {
+                        return;
+                    };
+                    match event {
+                        repair::Event::Log(line) => {
+                            append_install_log(&ui, &lines, line);
+                        }
+                        repair::Event::Finished {
+                            version,
+                            repaired,
+                            checked,
+                            seconds,
+                        } => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_install_busy(false);
+                            ui.set_install_failed(false);
+                            append_install_log(
+                                &ui,
+                                &lines,
+                                format!("修复完成：{version}"),
+                            );
+                            ui.set_install_summary(
+                                format!(
+                                    "{version} 检查 {checked} 个文件 · 修复 {repaired} 个 · 用时 {:.0} 秒",
+                                    seconds
+                                )
+                                .into(),
+                            );
+                        }
+                        repair::Event::Failed(problem) => {
+                            busy.store(false, Ordering::SeqCst);
+                            ui.set_install_busy(false);
+                            ui.set_install_failed(true);
+                            append_install_log(&ui, &lines, format!("修复失败：{problem}"));
+                            ui.set_install_summary(format!(
+                                "{problem}；请再次长按版本选择「修复游戏…」"
+                            ).into());
+                        }
+                    }
+                });
+            });
+        });
+    }
+
     {
         let weak = ui.as_weak();
         ui.on_install_dismissed(move || {
             if let Some(ui) = weak.upgrade() {
                 ui.set_install_version("".into());
+                ui.set_install_repairing(false);
                 ui.set_install_configuring(false);
                 ui.set_install_log("".into());
                 ui.set_install_summary("".into());

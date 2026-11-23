@@ -147,13 +147,25 @@ async fn install(version: &str, loader: Loader, report: &impl Fn(Event)) -> Resu
     let binary = aria2::installed().ok_or_else(|| "请先安装 aria2c，再安装游戏".to_string())?;
     report(Event::Log(format!("开始下载（{}）…", binary.display())));
     let mut done = 0usize;
-    let exit = aria2::run_list(&list, &root, |file| {
+    let exit = match aria2::run_list(&list, &root, |file| {
         done += 1;
         report(Event::Log(file));
-    })?;
-    report(Event::Log(format!(
-        "aria2 结束（退出码 {exit}），已写入 {done} 个文件"
-    )));
+    }) {
+        Ok(code) => Some(code),
+        Err(problem) => {
+            // Do not abandon the partial result: verify below reports exactly
+            // what is missing, and the repair action can fetch only those.
+            report(Event::Log(format!("aria2 未正常结束：{problem}")));
+            None
+        }
+    };
+    if let Some(code) = exit {
+        report(Event::Log(format!(
+            "aria2 结束（退出码 {code}），已写入 {done} 个文件"
+        )));
+    } else {
+        report(Event::Log(format!("aria2 结束，已写入 {done} 个文件")));
+    }
 
     // The list carries no checksum; this is the one place a file is judged.
     let failed = plan.verify(&root).await;
@@ -166,7 +178,7 @@ async fn install(version: &str, loader: Loader, report: &impl Fn(Event)) -> Resu
             report(Event::Log(format!("  {}", entry.path.display())));
         }
         return Err(format!(
-            "校验未通过：{} 个文件（可重试安装，已完成的会跳过）",
+            "校验未通过：{} 个文件；请在主页长按该版本选择「修复游戏…」只补下错误文件",
             failed.len()
         ));
     }
@@ -220,6 +232,12 @@ async fn install(version: &str, loader: Loader, report: &impl Fn(Event)) -> Resu
         }
     }
 
+    // Record the final hashes only after normalization and the client patch:
+    // those steps deliberately change jar bytes and would otherwise make every
+    // future integrity check report the whole tree as corrupt.
+    let version_dir = root.join("versions").join(&plan.id);
+    crate::repair::record_install_jars(&root, &version_dir, &plan)?;
+
     let bytes = plan.total_bytes();
     report(Event::Finished {
         version: plan.id,
@@ -246,7 +264,7 @@ async fn resolve_fabric_version(mdt: &MdtClient, version: &str) -> Result<String
 /// Vanilla has no touch input on 26.3, so this is a hard requirement: a
 /// resolution failure aborts the install before aria2 starts, instead of
 /// producing an instance nobody can control.
-async fn add_touch_controller(
+pub(crate) async fn add_touch_controller(
     plan: &mut mdt::plan::DownloadPlan,
     mc_version: &str,
     report: &impl Fn(Event),
@@ -292,7 +310,7 @@ async fn add_touch_controller(
 ///
 /// A missing API must not throw away the several hundred megabytes about to be
 /// downloaded, so metadata failures are logged and the loader install continues.
-async fn add_fabric_api(
+pub(crate) async fn add_fabric_api(
     plan: &mut mdt::plan::DownloadPlan,
     mc_version: &str,
     report: &impl Fn(Event),

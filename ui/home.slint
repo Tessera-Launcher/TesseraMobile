@@ -18,6 +18,7 @@ component InstalledRowView inherits Rectangle {
     in property <InstalledRow> item;
     callback uninstall(string);
     callback launch(string);
+    callback repair(string);
 
     height: 54px;
     background: touch.pressed ? Theme.pressed : transparent;
@@ -53,6 +54,12 @@ component InstalledRowView inherits Rectangle {
     ContextMenuArea {
         Menu {
             MenuItem {
+                title: "修复游戏…";
+                activated => {
+                    root.repair(root.item.key);
+                }
+            }
+            MenuItem {
                 title: "卸载";
                 activated => {
                     root.uninstall(root.item.key);
@@ -77,6 +84,7 @@ export component HomePage inherits Page {
     callback accounts-requested;
     callback uninstall-version(string);
     callback launch-requested(string);
+    callback repair-version(string);
 
     HeaderButton {
         // Right-aligned on the title's baseline: the title sits at
@@ -123,6 +131,9 @@ export component HomePage inherits Page {
                 }
                 launch(key) => {
                     root.launch-requested(key);
+                }
+                repair(key) => {
+                    root.repair-version(key);
                 }
             }
         }
