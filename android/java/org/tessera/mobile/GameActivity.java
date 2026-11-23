@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.SurfaceTexture;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -68,8 +70,7 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
     private void addLauncherKeys() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setPadding(dp(4), dp(2), dp(4), dp(2));
-        bar.setBackgroundColor(Color.argb(90, 0, 0, 0));
+        bar.setPadding(0, 0, 0, 0);
 
         Button escape = keyButton("ESC", KeyEvent.KEYCODE_ESCAPE);
         Button f3 = keyButton("F3", KeyEvent.KEYCODE_F3);
@@ -97,9 +98,30 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         button.setMinimumWidth(0);
         button.setMinHeight(0);
         button.setMinimumHeight(0);
-        button.setBackgroundColor(Color.argb(150, 0, 0, 0));
+        button.setGravity(Gravity.CENTER);
+        button.setStateListAnimator(null);
+        button.setBackground(keyBackground());
         button.setOnClickListener(v -> sendKeyTap(keyCode));
         return button;
+    }
+
+    /** FCL's default ControlButtonStyle: transparent fill, 1dp DKGRAY stroke,
+     *  10dp radius, white 12sp text; pressed fill is LTGRAY. */
+    private StateListDrawable keyBackground() {
+        GradientDrawable normal = new GradientDrawable();
+        normal.setShape(GradientDrawable.RECTANGLE);
+        normal.setColor(Color.TRANSPARENT);
+        normal.setStroke(dp(1), Color.DKGRAY);
+        normal.setCornerRadius(dp(10));
+        GradientDrawable pressed = new GradientDrawable();
+        pressed.setShape(GradientDrawable.RECTANGLE);
+        pressed.setColor(Color.LTGRAY);
+        pressed.setStroke(dp(1), Color.DKGRAY);
+        pressed.setCornerRadius(dp(10));
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed}, pressed);
+        states.addState(new int[0], normal);
+        return states;
     }
 
     private void sendKeyTap(int keyCode) {
