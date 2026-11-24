@@ -1,18 +1,43 @@
 // 设置: the desktop settings page's download section, sized for a phone.
-//
-// Only the GitHub proxy is exposed here so far; it is the same key and the same
-// `配置.toml` the desktop build reads.
 
 import { Theme } from "theme.slint";
 import { Page, SheetButton } from "page.slint";
+
+component CutoutSwitch inherits Rectangle {
+    in-out property <bool> checked: false;
+    callback toggled(bool);
+
+    width: 44px;
+    height: 26px;
+    border-radius: 13px;
+    background: root.checked ? Theme.accent : Theme.line;
+
+    Rectangle {
+        x: root.checked ? 20px : 2px;
+        y: 2px;
+        width: 22px;
+        height: 22px;
+        border-radius: 11px;
+        background: #ffffff;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
 
 export component SettingsPage inherits Page {
     title: "设置";
 
     in-out property <string> github-proxy: "";
+    in-out property <bool> ignore-cutout: false;
     in property <string> status: "";
     in property <bool> status-error: false;
     callback save-github-proxy(string);
+    callback ignore-cutout-changed(bool);
 
     Text {
         x: Theme.gutter;
@@ -90,7 +115,56 @@ export component SettingsPage inherits Page {
 
     Text {
         x: Theme.gutter;
-        y: root.top-inset + 340px;
+        y: root.top-inset + 326px;
+        text: "显示";
+        font-size: 16px;
+        font-weight: 600;
+        color: Theme.text;
+    }
+
+    Rectangle {
+        x: Theme.gutter;
+        y: root.top-inset + 352px;
+        width: root.width - Theme.gutter * 2;
+        height: 64px;
+        border-radius: 10px;
+        background: Theme.bar;
+        border-width: 1px;
+        border-color: Theme.line;
+
+        Text {
+            x: 12px;
+            y: 9px;
+            text: "忽略挖孔屏";
+            font-size: 14px;
+            color: Theme.text;
+        }
+
+        Text {
+            x: 12px;
+            y: 30px;
+            width: root.width - Theme.gutter * 2 - 80px;
+            height: 26px;
+            text: "让游戏画面延伸到前摄挖孔区域；关闭时保留安全区。";
+            font-size: 11px;
+            color: Theme.dim;
+            wrap: word-wrap;
+        }
+
+        CutoutSwitch {
+            x: root.width - Theme.gutter * 2 - 56px;
+            y: 19px;
+            checked: root.ignore-cutout;
+            toggled(value) => {
+                root.ignore-cutout = value;
+                root.ignore-cutout-changed(value);
+            }
+        }
+    }
+
+    Text {
+        x: Theme.gutter;
+        y: root.top-inset + 448px;
         width: root.width - Theme.gutter * 2;
         height: 56px;
         text: "Android 运行库由 Tessera 自建：LWJGL 3.4.3 / SDL3 / OpenAL / shaderc / JNA。\n"

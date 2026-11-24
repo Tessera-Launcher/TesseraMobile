@@ -1,9 +1,9 @@
 //! The phone front-end's slice of the desktop's `配置.toml`.
 //!
-//! Only the GitHub proxy is owned here so far, but the file is edited in place:
-//! keys the desktop build wrote (heap, window size, theme, …) are preserved
-//! instead of being dropped the first time the phone saves. That keeps one
-//! `配置.toml` usable from both front-ends.
+//! The phone owns the GitHub proxy and the display-cutout policy, but the file
+//! is edited in place: keys the desktop build wrote (heap, window size, theme,
+//! …) are preserved instead of being dropped the first time the phone saves.
+//! That keeps one `配置.toml` usable from both front-ends.
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +14,7 @@ pub const FILE: &str = "配置.toml";
 pub const CURRENT_VERSION: u32 = 1;
 
 const PROXY: &str = "github_proxy";
+const IGNORE_CUTOUT: &str = "ignore_cutout";
 
 /// What the phone front-end reads and writes today.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,12 +22,16 @@ pub struct Settings {
     /// `gh-proxy.com`-style base prefixed to every GitHub download URL; empty
     /// for none.
     pub github_proxy: String,
+    /// Let the game window draw under a display cutout instead of leaving the
+    /// cutout area black.
+    pub ignore_cutout: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             github_proxy: String::new(),
+            ignore_cutout: false,
         }
     }
 }
@@ -89,7 +94,17 @@ impl Settings {
             .unwrap_or("")
             .trim()
             .to_string();
-        (Self { github_proxy }, None)
+        let ignore_cutout = table
+            .get(IGNORE_CUTOUT)
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        (
+            Self {
+                github_proxy,
+                ignore_cutout,
+            },
+            None,
+        )
     }
 
     /// Write the proxy back, preserving every other key in the file.
@@ -113,6 +128,10 @@ impl Settings {
         table.insert(
             PROXY.to_string(),
             toml::Value::String(self.github_proxy.clone()),
+        );
+        table.insert(
+            IGNORE_CUTOUT.to_string(),
+            toml::Value::Boolean(self.ignore_cutout),
         );
         let body = toml::to_string_pretty(&table)
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
@@ -152,6 +171,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let settings = Settings {
             github_proxy: "gh-proxy.com".into(),
+            ignore_cutout: true,
         };
         settings.save(tmp.path()).unwrap();
         assert_eq!(Settings::load(tmp.path()).0, settings);
@@ -168,6 +188,7 @@ mod tests {
 
         Settings {
             github_proxy: "https://gh-proxy.com".into(),
+            ignore_cutout: true,
         }
         .save(tmp.path())
         .unwrap();
@@ -178,6 +199,18 @@ mod tests {
             .unwrap();
         assert_eq!(table["memory_mb"].as_integer(), Some(4096));
         assert_eq!(table[PROXY].as_str(), Some("https://gh-proxy.com"));
+        assert_eq!(table[IGNORE_CUTOUT].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn cutout_setting_round_trips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let settings = Settings {
+            github_proxy: String::new(),
+            ignore_cutout: true,
+        };
+        settings.save(tmp.path()).unwrap();
+        assert!(Settings::load(tmp.path()).0.ignore_cutout);
     }
 
     #[test]

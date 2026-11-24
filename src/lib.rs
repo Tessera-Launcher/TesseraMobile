@@ -76,6 +76,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     let (loaded, settings_note) = Settings::load(state.borrow().root());
     let config = Rc::new(RefCell::new(loaded));
     ui.set_github_proxy(config.borrow().github_proxy.clone().into());
+    ui.set_ignore_cutout(config.borrow().ignore_cutout);
     if let Some(note) = settings_note {
         ui.set_settings_status(note.into());
         ui.set_settings_status_error(true);
@@ -754,12 +755,14 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     // Activity has been handed off; otherwise every later tap is ignored.
     {
         let busy = launch_busy.clone();
+        let config = config.clone();
         ui.on_launch_requested(move |dir| {
             if busy.swap(true, Ordering::SeqCst) {
                 return;
             }
             let dir = dir.to_string();
-            let result = platform::start_game_activity(&dir);
+            let ignore_cutout = config.borrow().ignore_cutout;
+            let result = platform::start_game_activity(&dir, ignore_cutout);
             busy.store(false, Ordering::SeqCst);
             if let Err(problem) = result {
                 eprintln!("打开游戏窗口失败：{problem}");
@@ -991,6 +994,41 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
                             "已设为直连".to_string()
                         } else {
                             format!("已保存：{value}")
+                        }
+                        .into(),
+                    );
+                }
+                Err(error) => {
+                    ui.set_settings_status_error(true);
+                    ui.set_settings_status(format!("保存失败：{error}").into());
+                }
+            }
+        });
+    }
+
+    // Persist the cutout toggle independently of the proxy field. The game
+    // activity reads it when it is next started.
+    {
+        let weak = ui.as_weak();
+        let config = config.clone();
+        let state = state.clone();
+        ui.on_ignore_cutout_changed(move |value| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let mut next = config.borrow().clone();
+            next.ignore_cutout = value;
+            *config.borrow_mut() = next.clone();
+            ui.set_ignore_cutout(value);
+            let root = state.borrow().root().to_path_buf();
+            match next.save(&root) {
+                Ok(()) => {
+                    ui.set_settings_status_error(false);
+                    ui.set_settings_status(
+                        if value {
+                            "已忽略挖孔屏，下次启动游戏生效"
+                        } else {
+                            "已保留挖孔屏安全区，下次启动游戏生效"
                         }
                         .into(),
                     );

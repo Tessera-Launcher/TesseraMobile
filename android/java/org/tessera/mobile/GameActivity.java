@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.SurfaceTexture;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -47,6 +48,7 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
                         | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                         | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        applyCutoutMode();
 
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
@@ -64,6 +66,26 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         addLauncherKeys();
         setContentView(root);
+    }
+
+    /**
+     * The game is drawn by a TextureView in a full-screen window. By default
+     * Android keeps the display-cutout area out of the window, which shows up
+     * as a black strip on the landscape's left edge. The setting lets the user
+     * opt into drawing under the cutout; the default keeps the safe area.
+     */
+    private void applyCutoutMode() {
+        boolean ignore = getIntent().getBooleanExtra("ignore_cutout", false);
+        WindowManager.LayoutParams attrs = getWindow().getAttributes();
+        if (ignore) {
+            attrs.layoutInDisplayCutoutMode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        } else {
+            attrs.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+        }
+        getWindow().setAttributes(attrs);
     }
 
     /** Launcher-owned keys for things TouchController does not expose. */

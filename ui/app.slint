@@ -97,11 +97,13 @@ export component AppWindow inherits Window {
     in-out property <string> install-summary: "";
     in-out property <bool> install-failed: false;
 
-    /// Settings: the one desktop setting the phone front-end owns today.
+    /// Settings: the desktop proxy plus the game's display-cutout policy.
     in-out property <string> github-proxy: "";
+    in-out property <bool> ignore-cutout: false;
     in-out property <string> settings-status: "";
     in-out property <bool> settings-status-error: false;
 
+    callback ignore-cutout-changed(bool);
     callback accounts-requested;
     callback uninstall-version(string);
     callback launch-requested(string);
@@ -224,10 +226,15 @@ export component AppWindow inherits Window {
             if root.tab == Tab.settings : SettingsPage {
                 top-inset: root.safe-area-insets.top;
                 github-proxy <=> root.github-proxy;
+                ignore-cutout: root.ignore-cutout;
                 status: root.settings-status;
                 status-error: root.settings-status-error;
                 save-github-proxy(value) => {
                     root.github-proxy-saved(value);
+                }
+                ignore-cutout-changed(value) => {
+                    root.ignore-cutout = value;
+                    root.ignore-cutout-changed(value);
                 }
             }
         }

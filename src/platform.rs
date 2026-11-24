@@ -129,8 +129,8 @@ pub fn window_focused() -> bool {
     imp::window_focused()
 }
 
-pub fn start_game_activity(version: &str) -> Result<(), String> {
-    imp::start_game_activity(version)
+pub fn start_game_activity(version: &str, ignore_cutout: bool) -> Result<(), String> {
+    imp::start_game_activity(version, ignore_cutout)
 }
 
 /// The APK's native library directory (`ApplicationInfo.nativeLibraryDir`).
@@ -283,7 +283,7 @@ mod imp {
         .ok()
     }
 
-    pub fn start_game_activity(version: &str) -> Result<(), String> {
+    pub fn start_game_activity(version: &str, ignore_cutout: bool) -> Result<(), String> {
         with_activity(|env, activity| {
             // FindClass on a native thread uses the bootstrap loader, not the
             // app's dex loader. Go through the Activity's ClassLoader instead.
@@ -313,6 +313,16 @@ mod imp {
                 &[
                     JValue::Object(&JObject::from(key)),
                     JValue::Object(&JObject::from(value)),
+                ],
+            )?;
+            let cutout_key = env.new_string("ignore_cutout")?;
+            env.call_method(
+                &intent,
+                "putExtra",
+                "(Ljava/lang/String;Z)Landroid/content/Intent;",
+                &[
+                    JValue::Object(&JObject::from(cutout_key)),
+                    JValue::Bool(ignore_cutout as u8),
                 ],
             )?;
             env.call_method(
@@ -480,7 +490,7 @@ mod imp {
         None
     }
 
-    pub fn start_game_activity(_version: &str) -> Result<(), String> {
+    pub fn start_game_activity(_version: &str, _ignore_cutout: bool) -> Result<(), String> {
         Err("桌面构建不启动游戏".to_string())
     }
 
