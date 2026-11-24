@@ -34,16 +34,17 @@ adb shell am start -n org.tessera.mobile/android.app.NativeActivity
 
 ## 运行库
 
-Android 端的 LWJGL、SDL 和 OpenAL 暂用 FCL 的 Android 构建，由应用内的 aria2c
-下载到私有目录，不写入 `/sdcard`。
+Android 端的 LWJGL 3.4.3、SDL3、OpenAL、shaderc、SPIRV-Cross、FreeType、JNA
+和 jemalloc 由 [BuildNatives4Android](https://github.com/Tessera-Launcher/BuildNatives4Android)
+自建，由应用内的 aria2c 下载到私有目录，不写入 `/sdcard`。
 
 Mojang 客户端 jar 的 Vulkan-only 补丁在安装时写入，不需要外部脚本或 `javac`。
 
 ## 许可
 
 GPL-3.0-or-later。其中 `vendor/mdt-minecraft` 为 MIT，
-`vendor/minecraft-auth` 为 LGPL-3.0-or-later；FCL 运行库以及 SDL、LWJGL、OpenAL
-遵循各自的许可。
+`vendor/minecraft-auth` 为 LGPL-3.0-or-later；FCL 的 JNI 宿主库以及 SDL、LWJGL、
+OpenAL 遵循各自的许可。
 
 此项目的诞生离不开其他的 Android 版 MCJE 启动器，在此致谢。
 此项目直接使用了 FCL 和 Zalith Launcher 2 的源代码；大部分 Java 代码都是直接复制，或仅作了极少量修改。

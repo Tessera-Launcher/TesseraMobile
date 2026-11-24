@@ -56,8 +56,8 @@ Added:
 - **Asset index caching** in `$HOME/.mdt/registry/index/…`: the index is the same
   file every install of that version reads, so it is fetched once and re-verified
   by SHA-1 before use.
-- **LWJGL is excluded from the plan.** The launcher ships the FCL Android
-  runtime pack (LWJGL jars and natives, OpenAL, SDL, JNA), so Mojang's desktop
+- **LWJGL is excluded from the plan.** The launcher ships its own Tessera
+  Android runtime pack (LWJGL jars and natives, OpenAL, SDL, JNA), so Mojang's desktop
   LWJGL jars must not be downloaded. `build_tasks_from_version_json*` and
   `plan::entries_from_libraries` skip every `org.lwjgl*` coordinate.
 - **Native classifier and extraction handling is gone.** There is no `natives`
