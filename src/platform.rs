@@ -23,6 +23,7 @@ static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// run from the data directory; the app's own files directory can (this build
 /// targets API 28, which predates the no-exec policy).
 static PRIVATE_DIR: OnceLock<PathBuf> = OnceLock::new();
+static NATIVE_LIBRARY_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// The Android `Activity`, kept as the global reference `android-activity` owns.
 ///
@@ -52,6 +53,12 @@ pub fn set_data_dir(path: PathBuf) {
 /// Pin the app-private files directory. Later calls are ignored.
 pub fn set_private_dir(path: PathBuf) {
     let _ = PRIVATE_DIR.set(path);
+}
+
+/// Pin the APK native library directory for the `:game` process, where
+/// `ndk_context` is not initialized.
+pub fn set_native_library_dir(path: PathBuf) {
+    let _ = NATIVE_LIBRARY_DIR.set(path);
 }
 
 /// The app-private files directory; the data root is the desktop fallback.
@@ -132,7 +139,10 @@ pub fn start_game_activity(version: &str) -> Result<(), String> {
 /// files under `files/` are not. `aria2c` is shipped as `libaria2c.so` and run
 /// from this directory.
 pub fn native_library_dir() -> Option<PathBuf> {
-    imp::native_library_dir()
+    NATIVE_LIBRARY_DIR
+        .get()
+        .cloned()
+        .or_else(imp::native_library_dir)
 }
 
 /// Open the system page where "all files access" is granted.

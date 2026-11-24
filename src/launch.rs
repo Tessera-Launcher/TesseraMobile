@@ -6,9 +6,10 @@
 //! `JNI_CreateJavaVM`, then call the game's `main`.
 //!
 //! The launch command is the modern (26.x) subset of the desktop builder:
-//! client jar, non-LWJGL libraries, Fabric loader libraries and the FCL LWJGL
-//! jars; no legacy agent, no AOT, no natives extraction. FCL's Android LWJGL
-//! and SDL runtime replaces Mojang's desktop natives; rendering is Vulkan.
+//! client jar, non-LWJGL libraries, Fabric loader libraries and the Tessera
+//! LWJGL jars; no legacy agent, no AOT, no natives extraction. Tessera's
+//! Android LWJGL and SDL runtime replaces Mojang's desktop natives; rendering
+//! is Vulkan.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -118,7 +119,20 @@ pub fn spawn(
     active: Option<PathBuf>,
     report: impl Fn(Event) + Send + Sync + 'static,
 ) {
+    let debug = crate::platform::private_dir().join("native-start.log");
+    let note = |text: &str| {
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&debug)
+        {
+            let _ = writeln!(file, "spawn: {text}");
+        }
+    };
+    note("enter");
     if LAUNCHED.swap(true, Ordering::SeqCst) {
+        note("already launched");
         report(Event::Failed(
             "本进程已经创建过 JVM；请重启应用后再启动游戏".to_string(),
         ));
@@ -127,18 +141,47 @@ pub fn spawn(
     use std::sync::Arc;
     let report = Arc::new(report);
     let thread_report = report.clone();
+    let thread_debug = debug.clone();
     let spawned = std::thread::Builder::new()
         .name("minecraft".to_string())
         .stack_size(16 * 1024 * 1024)
         .spawn(move || {
-            let outcome = prepare(&dir_name, active.as_deref(), thread_report.as_ref())
-                .and_then(|plan| run(plan, thread_report.as_ref()));
-            if let Err(problem) = outcome {
-                thread_report(Event::Failed(problem));
+            let note = |text: &str| {
+                use std::io::Write;
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&thread_debug)
+                {
+                    let _ = writeln!(file, "minecraft: {text}");
+                }
+            };
+            note("thread enter");
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                prepare(&dir_name, active.as_deref(), thread_report.as_ref())
+                    .and_then(|plan| run(plan, thread_report.as_ref()))
+            }));
+            match outcome {
+                Ok(Ok(())) => note("thread done"),
+                Ok(Err(problem)) => {
+                    note(&format!("thread failed: {problem}"));
+                    thread_report(Event::Failed(problem));
+                }
+                Err(payload) => {
+                    let message = payload
+                        .downcast_ref::<&str>()
+                        .map(|text| text.to_string())
+                        .or_else(|| payload.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "non-string panic".to_string());
+                    note(&format!("thread panicked: {message}"));
+                }
             }
         });
     if let Err(error) = spawned {
+        note(&format!("thread failed: {error}"));
         report(Event::Failed(format!("创建启动线程失败：{error}")));
+    } else {
+        note("thread started");
     }
 }
 
@@ -151,6 +194,7 @@ struct Plan {
     game_args: Vec<String>,
     mods: Vec<PathBuf>,
     jre: PathBuf,
+    work_dir: PathBuf,
 }
 
 fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Result<Plan, String> {
@@ -230,7 +274,7 @@ fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Re
     }
 
     let runtime = platform::private_dir().join("runtime");
-    let lwjgl_dir = runtime.join("lwjgl").join("3.4.1");
+    let lwjgl_dir = runtime.join("lwjgl").join(crate::runtime::RUNTIME_VERSION);
     let mut lwjgl_jars: Vec<PathBuf> = std::fs::read_dir(&lwjgl_dir)
         .map_err(|error| format!("读取 {} 失败：{error}", lwjgl_dir.display()))?
         .flatten()
@@ -242,7 +286,7 @@ fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Re
         .collect();
     lwjgl_jars.sort();
     if lwjgl_jars.is_empty() {
-        return Err("FCL LWJGL 运行库缺失，请先安装运行库".to_string());
+        return Err("Tessera LWJGL 运行库缺失，请先安装运行库".to_string());
     }
     // FCL's libpojavexec expects the app-side CallbackBridge (its native
     // declarations are bound by the library); it must win over the copy in the
@@ -301,6 +345,8 @@ fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Re
     let natives = runtime.join("native").join("arm64-v8a");
     let lwjgl_natives = lwjgl_dir.join("natives").join("arm64-v8a");
     let jna = newest_jna(&runtime).ok_or_else(|| "缺少 JNA 运行库".to_string())?;
+    let apk_native =
+        platform::native_library_dir().ok_or_else(|| "找不到 APK nativeLibraryDir".to_string())?;
     let tmp = platform::private_dir().join("tmp");
     std::fs::create_dir_all(&tmp).map_err(|error| format!("创建临时目录失败：{error}"))?;
     std::fs::create_dir_all(&lwjgl_natives)
@@ -348,20 +394,28 @@ fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Re
         .collect::<Vec<_>>()
         .join(":");
     let native_path = format!(
-        "{}:{}:{}:/system/lib64:/vendor/lib64",
+        "{}:{}:{}:{}:/system/lib64:/vendor/lib64",
         lwjgl_natives.display(),
         natives.display(),
-        jna.display()
+        jna.display(),
+        apk_native.display()
     );
     jvm_args.extend([
         format!("-Djava.home={}", jre.display()),
         format!("-Djava.class.path={classpath_string}"),
         format!("-Djava.library.path={native_path}"),
-        format!("-Dorg.lwjgl.librarypath={}", natives.display()),
+        format!(
+            "-Dorg.lwjgl.librarypath={}:{}",
+            lwjgl_natives.display(),
+            natives.display()
+        ),
         format!(
             "-Dorg.lwjgl.openal.libname={}/libopenal.so",
             natives.display()
         ),
+        // Android ships the Vulkan loader as `libvulkan.so`; LWJGL's
+        // desktop default is `libvulkan.so.1`, which does not exist here.
+        "-Dorg.lwjgl.vulkan.libname=libvulkan.so".to_string(),
         format!(
             "-Dorg.lwjgl.system.SharedLibraryExtractPath={}/lwjgl",
             tmp.display()
@@ -405,12 +459,13 @@ fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Re
     std::env::set_var("HOME", platform::private_dir());
     std::env::set_var("TMPDIR", &tmp);
     let ld = format!(
-        "{}:{}:{}:{}:{}",
+        "{}:{}:{}:{}:{}:{}",
         jre.join("lib").display(),
         jre.join("lib/server").display(),
         lwjgl_natives.display(),
         natives.display(),
-        jna.display()
+        jna.display(),
+        apk_native.display()
     );
     std::env::set_var("LD_LIBRARY_PATH", ld);
 
@@ -427,6 +482,7 @@ fn prepare(dir_name: &str, active: Option<&Path>, report: &impl Fn(Event)) -> Re
         game_args,
         mods,
         jre,
+        work_dir: version_dir,
     })
 }
 
@@ -576,6 +632,13 @@ fn run(plan: Plan, report: &impl Fn(Event)) -> Result<(), String> {
     use jni::JavaVM;
     use std::ffi::CString;
     use std::os::raw::{c_char, c_void};
+
+    // Java's relative file paths are resolved by the OS, not by the
+    // `user.dir` property. Minecraft's log4j config opens `logs/latest.log`
+    // relative to the working directory, so make the version directory the
+    // real cwd before creating the VM.
+    std::env::set_current_dir(&plan.work_dir)
+        .map_err(|error| format!("切换工作目录 {} 失败：{error}", plan.work_dir.display()))?;
 
     let native = crate::platform::private_dir().join("runtime/native/arm64-v8a");
     let libjvm = preload(&plan.jre, &native, report)?;
@@ -877,13 +940,21 @@ fn preload(
     // to be in the global namespace before the JVM asks for it from
     // java.library.path. Preload the dependencies, not pojavexec itself, so
     // its JNI_OnLoad runs when JVM System.loadLibrary opens it.
+    let apk_native = platform::native_library_dir();
     for name in [
         "libbytehook.so",
         "libandroidnsbypass.so",
         "libfcl.so",
         "libpojavexec_awt.so",
     ] {
-        let path = native.join(name);
+        // FCL's JNI host libraries live in the APK's nativeLibraryDir, not in
+        // the downloaded runtime pack. Keep the runtime path as a fallback for
+        // a future self-contained FCL replacement.
+        let path = apk_native
+            .as_ref()
+            .map(|dir| dir.join(name))
+            .filter(|path| path.is_file())
+            .unwrap_or_else(|| native.join(name));
         let text = CString::new(path.to_string_lossy().as_bytes())
             .map_err(|_| format!("路径包含 NUL：{}", path.display()))?;
         let handle = unsafe { dlopen(text.as_ptr(), RTLD_NOW | RTLD_GLOBAL) };

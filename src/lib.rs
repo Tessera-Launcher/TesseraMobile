@@ -606,7 +606,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     }
 
-    // Install the Android runtime pack (FCL LWJGL/OpenAL/SDL/JNA). Downloads
+    // Install the Tessera Android runtime pack (LWJGL/SDL/OpenAL/JNA). Downloads
     // go through aria2c, so the same gate as the JRE applies.
     {
         let weak = ui.as_weak();
@@ -1212,13 +1212,28 @@ pub extern "system" fn Java_org_tessera_mobile_GameActivity_nativeStartGame(
     // GameActivity runs in its own :game process, so the launcher's
     // `android_main` has not populated these OnceLocks in this process.
     init_game_paths(&mut env, &activity);
+    let debug = platform::private_dir().join("native-start.log");
+    let note = |text: &str| {
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&debug)
+        {
+            let _ = writeln!(file, "{text}");
+        }
+    };
+    note("nativeStartGame enter");
     let Ok(version) = env.get_string(&version) else {
+        note("get_string failed");
         return;
     };
     let dir: String = version.into();
+    note(&format!("version={dir}"));
     let log = platform::private_dir().join("game-launch.log");
     let vm = env.get_java_vm().ok();
     let activity = env.new_global_ref(&activity).ok();
+    note("spawn");
     launch::spawn(dir, None, move |event| {
         use std::io::Write;
         let finished = matches!(
@@ -1248,6 +1263,7 @@ pub extern "system" fn Java_org_tessera_mobile_GameActivity_nativeStartGame(
             unsafe { libc::_exit(0) };
         }
     });
+    note("spawn returned");
 }
 
 /// Fill in the paths that `launch::prepare` reads, for the :game process.
@@ -1272,6 +1288,26 @@ fn init_game_paths(env: &mut jni::JNIEnv, activity: &jni::objects::JObject) {
     {
         if let Some(path) = path_of(env, files) {
             platform::set_private_dir(path);
+        }
+    }
+    if let Ok(info) = env
+        .call_method(
+            activity,
+            "getApplicationInfo",
+            "()Landroid/content/pm/ApplicationInfo;",
+            &[],
+        )
+        .and_then(|value| value.l())
+    {
+        if let Ok(dir) = env
+            .get_field(&info, "nativeLibraryDir", "Ljava/lang/String;")
+            .and_then(|value| value.l())
+        {
+            if let Ok(text) = env.get_string(&JString::from(dir)) {
+                platform::set_native_library_dir(std::path::PathBuf::from(
+                    text.to_string_lossy().into_owned(),
+                ));
+            }
         }
     }
     if let Ok(storage) = env

@@ -160,21 +160,18 @@ pub fn build_tasks_from_version_json_into(
     // A version JSON is remote input. Every task is admitted only when its SHA-1 is a real digest,
     // its URL is http(s), and its Maven-relative path stays inside `libraries/` — otherwise the
     // downloader would happily verify nothing and write wherever the manifest says.
-    let push = |tasks: &mut Vec<DownloadTask>,
-                url: &str,
-                dest_path: PathBuf,
-                sha1: &str,
-                size: u64| {
-        if !(sha1.is_empty() || is_sha1_hex(sha1)) || !is_safe_http_url(url) {
-            return;
-        }
-        tasks.push(DownloadTask {
-            url: url.to_string(),
-            dest_path,
-            sha1: sha1.to_string(),
-            size,
-        });
-    };
+    let push =
+        |tasks: &mut Vec<DownloadTask>, url: &str, dest_path: PathBuf, sha1: &str, size: u64| {
+            if !(sha1.is_empty() || is_sha1_hex(sha1)) || !is_safe_http_url(url) {
+                return;
+            }
+            tasks.push(DownloadTask {
+                url: url.to_string(),
+                dest_path,
+                sha1: sha1.to_string(),
+                size,
+            });
+        };
 
     // 1. client.jar
     if let Some(downloads) = &version_json.downloads {

@@ -201,16 +201,20 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         if (started) return;
         started = true;
         Surface surface = new Surface(texture);
+        android.util.Log.i("TesseraSdl", "surface: initialize");
         TesseraSdl.initialize(this);
         // Load SDL3 in the app VM first so its JNI_OnLoad registers the Java
         // callbacks. Rust then marks the game thread as SDL's main thread.
         TesseraSdl.loadSdl();
+        android.util.Log.i("TesseraSdl", "surface: prepare");
         TesseraSdl.prepareSurface(this, surface, root);
+        android.util.Log.i("TesseraSdl", "surface: nativeStartGame");
         org.lwjgl.glfw.CallbackBridge.windowWidth = width;
         org.lwjgl.glfw.CallbackBridge.windowHeight = height;
         String version = getIntent().getStringExtra("version");
         if (version == null) version = "";
         nativeStartGame(version);
+        android.util.Log.i("TesseraSdl", "surface: nativeStartGame returned");
     }
 
     @Override

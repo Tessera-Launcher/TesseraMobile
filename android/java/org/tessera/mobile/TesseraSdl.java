@@ -1,9 +1,12 @@
 package org.tessera.mobile;
 
 import android.app.Activity;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.ViewGroup;
+
+import java.io.File;
 
 import com.tungsten.fcl.game.sdl.SdlBridge;
 import com.tungsten.fclauncher.bridge.FCLBridge;
@@ -30,11 +33,17 @@ public final class TesseraSdl {
 
     public static synchronized void loadSdl() {
         if (sdlLoaded) return;
+        Log.i("TesseraSdl", "loadSdl: loading SDL3");
         // SDL must be the exact same file the game JVM loads through
         // java.library.path (the runtime pack), not the copy in the APK.
         System.load(nativeDir + "/libSDL3.so");
-        System.load(nativeDir + "/libSDL2.so");
+        Log.i("TesseraSdl", "loadSdl: SDL3 loaded");
+        File sdl2 = new File(nativeDir, "libSDL2.so");
+        if (sdl2.isFile()) {
+            System.load(sdl2.getAbsolutePath());
+        }
         sdlLoaded = true;
+        Log.i("TesseraSdl", "loadSdl: done");
     }
 
     /**

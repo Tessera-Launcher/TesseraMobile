@@ -443,8 +443,8 @@ export component DownloadPage inherits Page {
 
             if !root.runtime-installed : DependencyCard {
                 title: "需要运行库";
-                detail: "Android 版 LWJGL 3.4.1、OpenAL、SDL、JNA 和 Vulkan 支持，借用 FCL 的构建。";
-                info: "LWJGL 3.4.1 · Vulkan · arm64 · 约 46 MB";
+                detail: "Tessera 自建 LWJGL 3.4.3、SDL3、OpenAL、shaderc、JNA 和 Vulkan 支持。";
+                info: "LWJGL 3.4.3 · Vulkan · arm64 · 约 20 MB";
                 action: "下载运行库";
                 busy: root.runtime-busy;
                 progress: root.runtime-progress;
