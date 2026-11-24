@@ -1,0 +1,14 @@
+[package]
+name = "tessera-fcl-shim"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "fcl"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+lto = true
+strip = true
