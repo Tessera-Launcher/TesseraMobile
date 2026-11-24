@@ -945,7 +945,6 @@ fn preload(
         "libbytehook.so",
         "libandroidnsbypass.so",
         "libfcl.so",
-        "libpojavexec_awt.so",
     ] {
         // FCL's JNI host libraries live in the APK's nativeLibraryDir, not in
         // the downloaded runtime pack. Keep the runtime path as a fallback for
