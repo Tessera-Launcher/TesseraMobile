@@ -2,6 +2,10 @@ package org.lwjgl.glfw;
 
 /** Game-VM side of the FCL input bridge. libpojavexec owns the native methods. */
 public final class CallbackBridge {
+    // SDLInit passes these to nativeNotifyLauncher.
+    public static final int SDL = 0;
+    public static final int INIT = 0;
+
     public static volatile int windowWidth;
     public static volatile int windowHeight;
     public static volatile int physicalWidth;

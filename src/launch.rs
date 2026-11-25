@@ -936,41 +936,6 @@ fn preload(
             remaining.join("、")
         )));
     }
-    // FCL's LWJGL replacement loads `libpojavexec.so`; its DT_NEEDED chain has
-    // to be in the global namespace before the JVM asks for it from
-    // java.library.path. Preload the dependencies, not pojavexec itself, so
-    // its JNI_OnLoad runs when JVM System.loadLibrary opens it.
-    let apk_native = platform::native_library_dir();
-    for name in [
-        "libbytehook.so",
-        "libandroidnsbypass.so",
-        "libfcl.so",
-    ] {
-        // FCL's JNI host libraries live in the APK's nativeLibraryDir, not in
-        // the downloaded runtime pack. Keep the runtime path as a fallback for
-        // a future self-contained FCL replacement.
-        let path = apk_native
-            .as_ref()
-            .map(|dir| dir.join(name))
-            .filter(|path| path.is_file())
-            .unwrap_or_else(|| native.join(name));
-        let text = CString::new(path.to_string_lossy().as_bytes())
-            .map_err(|_| format!("路径包含 NUL：{}", path.display()))?;
-        let handle = unsafe { dlopen(text.as_ptr(), RTLD_NOW | RTLD_GLOBAL) };
-        if handle.is_null() {
-            let error = unsafe { dlerror() };
-            let message = if error.is_null() {
-                "unknown".to_string()
-            } else {
-                unsafe { std::ffi::CStr::from_ptr(error) }
-                    .to_string_lossy()
-                    .into_owned()
-            };
-            report(Event::Log(format!("预加载 {name} 失败：{message}")));
-        } else {
-            handles.push(handle);
-        }
-    }
     std::mem::forget(handles);
     Ok(jvm_handle)
 }

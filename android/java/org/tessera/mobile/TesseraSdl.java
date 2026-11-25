@@ -9,7 +9,8 @@ import android.view.ViewGroup;
 import java.io.File;
 
 import com.tungsten.fcl.game.sdl.SdlBridge;
-import com.tungsten.fclauncher.bridge.FCLBridge;
+import org.libsdl.app.SDLActivity;
+import org.libsdl.app.SDLSurface;
 
 /** Loads FCL's SDL hook library in the app VM, before the game JVM exists. */
 public final class TesseraSdl {
@@ -27,8 +28,6 @@ public final class TesseraSdl {
                 + "/runtime/native/arm64-v8a";
         System.loadLibrary("c++_shared");
         System.loadLibrary("tessera_bridge");
-        System.loadLibrary("pojavexec");
-        FCLBridge.initializeHooks();
         initialized = true;
     }
 
@@ -85,8 +84,20 @@ public final class TesseraSdl {
 
     public static void prepareSurface(Activity activity, Surface surface, ViewGroup layout) {
         SdlBridge.prepareSurface(activity, surface, layout, activity);
-        // The game VM's SDL_Init hook does not necessarily reach this app-side
-        // CallbackBridge, so enable the SDL mouse path explicitly for the host.
+        SdlBridge.setupJNI();
+        SDLSurface sdlSurface = SDLActivity.getSDLSurface();
+        if (sdlSurface != null) {
+            // externalInitialize injects the native Surface but does not run the
+            // Android surface lifecycle callbacks. FCL's old notifyLauncher path
+            // did this; do it explicitly before the game JVM starts.
+            sdlSurface.surfaceCreated(null);
+            sdlSurface.surfaceChanged();
+            int width = org.lwjgl.glfw.CallbackBridge.windowWidth;
+            int height = org.lwjgl.glfw.CallbackBridge.windowHeight;
+            if (width > 0 && height > 0) {
+                sdlSurface.nativeResize(width, height);
+            }
+        }
         SdlBridge.setSdlEnabled(true);
     }
 

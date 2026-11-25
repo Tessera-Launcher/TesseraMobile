@@ -229,10 +229,10 @@ public final class GameActivity extends Activity implements TextureView.SurfaceT
         // callbacks. Rust then marks the game thread as SDL's main thread.
         TesseraSdl.loadSdl();
         android.util.Log.i("TesseraSdl", "surface: prepare");
-        TesseraSdl.prepareSurface(this, surface, root);
-        android.util.Log.i("TesseraSdl", "surface: nativeStartGame");
         org.lwjgl.glfw.CallbackBridge.windowWidth = width;
         org.lwjgl.glfw.CallbackBridge.windowHeight = height;
+        TesseraSdl.prepareSurface(this, surface, root);
+        android.util.Log.i("TesseraSdl", "surface: nativeStartGame");
         String version = getIntent().getStringExtra("version");
         if (version == null) version = "";
         nativeStartGame(version);
