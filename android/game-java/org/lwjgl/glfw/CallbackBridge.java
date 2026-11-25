@@ -18,7 +18,8 @@ public final class CallbackBridge {
     public static boolean sGamepadDirectInput;
 
     static {
-        System.loadLibrary("pojavexec");
+        // Only the shared grab flag is needed from the game VM now.
+        System.loadLibrary("tessera_bridge");
     }
 
     private CallbackBridge() {}

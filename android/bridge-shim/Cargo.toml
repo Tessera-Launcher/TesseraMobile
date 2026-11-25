@@ -1,0 +1,14 @@
+[package]
+name = "tessera-bridge"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "tessera_bridge"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+lto = true
+strip = true

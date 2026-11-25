@@ -40,7 +40,15 @@ public final class CallbackBridge {
     public static final int ACTION_INIT_LAUNCHER_INTEGRATION = 0;
     public static final int ACTION_SEND_TEXTBOX_RECT = 1;
 
+    static {
+        // Shared with the game VM; see android/bridge-shim.
+        System.loadLibrary("tessera_bridge");
+    }
+
     private CallbackBridge() {}
+
+    /** Cross-VM cursor-grab state, shared by the launcher and game VMs. */
+    private static native boolean nativeIsGrabbing();
 
     // libpojavexec registers these through RegisterNatives.  It logs
     // "CriticalNative is not available" on current GrapheneOS, so they are
@@ -106,7 +114,7 @@ public final class CallbackBridge {
     public static void onDirectInputEnable() {}
 
     public static boolean isGrabbing() {
-        return isGrabbing;
+        return nativeIsGrabbing();
     }
 
     /**
@@ -122,8 +130,7 @@ public final class CallbackBridge {
         mouseY = y;
         deltaX = dx;
         deltaY = dy;
-        nativeSendCursorPos(x, y);
-        if (isGrabbing) {
+        if (isGrabbing()) {
             org.libsdl.app.SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, dx, dy, true);
         } else {
             org.libsdl.app.SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE,
@@ -137,7 +144,6 @@ public final class CallbackBridge {
         deltaY = y;
         mouseX += x;
         mouseY += y;
-        nativeSendCursorPos(mouseX, mouseY);
         org.libsdl.app.SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, true);
     }
 
@@ -148,7 +154,6 @@ public final class CallbackBridge {
         else if (button == GLFW_MOUSE_RIGHT) sdlButton = MotionEvent.BUTTON_SECONDARY;
         else if (button == GLFW_MOUSE_MIDDLE) sdlButton = MotionEvent.BUTTON_TERTIARY;
 
-        nativeSendMouseButton(button, down ? 1 : 0, 0);
         if (sdlButton == 0) return;
 
         if (down) sMouseButtonState |= sdlButton;

@@ -26,6 +26,7 @@ public final class TesseraSdl {
         nativeDir = activity.getFilesDir().getAbsolutePath()
                 + "/runtime/native/arm64-v8a";
         System.loadLibrary("c++_shared");
+        System.loadLibrary("tessera_bridge");
         System.loadLibrary("pojavexec");
         FCLBridge.initializeHooks();
         initialized = true;
