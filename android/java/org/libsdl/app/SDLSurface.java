@@ -31,7 +31,7 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 
-import com.tungsten.fcl.game.sdl.SdlBridge;
+import org.tessera.mobile.SdlBridge;
 
 
 /**

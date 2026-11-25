@@ -1,4 +1,4 @@
-package com.tungsten.fcl.game.sdl;
+package org.tessera.mobile;
 
 import android.app.Activity;
 import android.view.Surface;

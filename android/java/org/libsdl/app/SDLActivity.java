@@ -48,8 +48,7 @@ import android.widget.Toast;
 
 import androidx.annotation.Keep;
 
-import com.tungsten.fcl.game.sdl.SdlBridge;
-import com.tungsten.fclauncher.bridge.FCLBridge;
+import org.tessera.mobile.SdlBridge;
 
 
 import java.io.FileNotFoundException;
@@ -1854,8 +1853,19 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
      */
     public static boolean openURL(String url)
     {
-        FCLBridge.openLink(url);
-        return true;
+        Activity activity = getContext();
+        if (activity == null || url == null || url.isEmpty()) {
+            return false;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity.startActivity(intent);
+            return true;
+        } catch (Exception error) {
+            Log.w(TAG, "openURL failed: " + url, error);
+            return false;
+        }
     }
 
     /**

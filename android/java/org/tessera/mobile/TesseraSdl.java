@@ -8,7 +8,7 @@ import android.view.ViewGroup;
 
 import java.io.File;
 
-import com.tungsten.fcl.game.sdl.SdlBridge;
+import org.tessera.mobile.SdlBridge;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 

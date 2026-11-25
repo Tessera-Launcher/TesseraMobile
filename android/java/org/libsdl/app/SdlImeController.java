@@ -29,8 +29,7 @@ import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.inputmethod.InputMethodManager;
 
-import com.tungsten.fcl.game.sdl.SdlBridge;
-import com.tungsten.fcl.control.keyboard.TouchCharInput;
+import org.tessera.mobile.SdlBridge;
 
 /**
  * SDL 侧软键盘的显式控制器
@@ -138,7 +137,6 @@ final class SdlImeController {
         }
 
         if (source == Source.GAME) {
-            TouchCharInput.disableActiveInput();
         } else if (!mTextInputActive && !mForcedByLauncher) {
             // 游戏侧文本输入通道关闭（如模组自绘输入界面会主动关闭通道）时，
             // 启动器显式唤起输入法需代为激活 native 通道，否则输入文本无法送达游戏
